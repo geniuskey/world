@@ -1,0 +1,52 @@
+{
+  "name": "world",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n web,api \"vite --host localhost\" \"wrangler dev --env local --port 8788\"",
+    "dev:web": "vite --host localhost",
+    "dev:api": "wrangler dev --env local --port 8788",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "db:migrate": "wrangler d1 migrations apply world-local --local --env local",
+    "db:reset": "node scripts/local-db.mjs reset",
+    "db:demo": "node scripts/local-db.mjs demo",
+    "season:generate": "node scripts/world.mjs",
+    "deploy": "npm run build && wrangler deploy --env=\"\"",
+    "format": "prettier --write src worker shared tests scripts *.ts *.json *.jsonc docs README.md .github"
+  },
+  "dependencies": {
+    "hono": "^4.10.0",
+    "jose": "^6.2.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.9.0",
+    "zod": "^4.6.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261025.1",
+    "@playwright/test": "^1.64.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.1.0",
+    "concurrently": "^9.2.0",
+    "esbuild": "^0.28.2",
+    "miniflare": "5.20261019.2-beta",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.0",
+    "vite": "^8.3.5",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.152.0"
+  },
+  "overrides": {
+    "undici": "^7.30.1"
+  }
+}
