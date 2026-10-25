@@ -26,6 +26,18 @@ Integration tests run the actual Worker and migrations against local D1. Browser
 
 The current checks cover 28 server/rule/authentication scenarios and 12 browser scenarios. Google tests use a signed mock identity provider; a live OAuth client still needs to be configured and checked before deployment.
 
+### Tailscale preview
+
+Use the machine's Tailscale DNS name (from `tailscale status --json`) for a private HTTPS preview:
+
+```sh
+WORLD_PREVIEW_ORIGIN=https://<machine>.<tailnet>.ts.net:5174 npm run dev
+# In another terminal:
+tailscale serve --bg --https=5174 http://127.0.0.1:5174
+```
+
+Open that HTTPS address on a device connected to the same tailnet. The explicitly configured preview origin can use the local test accounts; the API stays bound to loopback and rejects writes from other origins. This is a development playtest with shared name-based accounts. Stop sharing with `tailscale serve --https=5174 off`; stop the development server separately. [Tailscale Serve reference](https://tailscale.com/docs/reference/tailscale-cli/serve).
+
 ## Deployment
 
 1. Run `npx wrangler d1 create world`; copy the database ID into `wrangler.jsonc`.
