@@ -1,6 +1,8 @@
 import { rm, mkdir, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { build } from 'esbuild';
 
 const command = process.argv[2];
 const run = (args) => {
@@ -15,14 +17,46 @@ if (command === 'reset') {
   run(['d1', 'migrations', 'apply', 'world-local', '--local', '--env', 'local']);
   console.log('Local WORLD database reset. Restart the development server if it was running.');
 } else if (command === 'demo') {
+  await mkdir('.wrangler', { recursive: true });
+  await build({
+    stdin: {
+      contents:
+        "export { rootTileAt,regionForTile } from './shared/worldGrid'; export { virtualTerritories } from './worker/world';",
+      resolveDir: process.cwd(),
+    },
+    bundle: true,
+    platform: 'node',
+    format: 'esm',
+    outfile: '.wrangler/demo-grid.mjs',
+  });
+  const { rootTileAt, regionForTile, virtualTerritories } = await import(
+    pathToFileURL(resolve('.wrangler/demo-grid.mjs'))
+  );
   const sql = [];
-  for (const [name, region, kind] of [
-    ['Mira', 'han', 'food'],
-    ['Sol', 'tagus', 'wood'],
-    ['Jun', 'lakes', 'iron'],
+  for (const [name, longitude, latitude, kind] of [
+    ['Mira', 10, 10, 'food'],
+    ['Sol', 50, 20, 'wood'],
+    ['Jun', -60, -10, 'iron'],
   ]) {
-    const user = `demo-${name.toLowerCase()}`,
-      display = `Demo ${name}`,
+    const tile = rootTileAt(longitude, latitude),
+      region = tile.id,
+      metadata = regionForTile(tile, '');
+    const active = "SELECT id FROM seasons WHERE status='active' AND ends_at>unixepoch()";
+    sql.push(
+      `INSERT OR IGNORE INTO regions(id,season_id,name,subtitle,longitude,latitude,width,height,land_count) SELECT '${region}',id,'${metadata.name}','World grid',${metadata.longitude},${metadata.latitude},8,8,64 FROM seasons WHERE id IN (${active});`,
+    );
+    sql.push(
+      `INSERT OR IGNORE INTO world_tiles(id,season_id,level,west,south,east,north) SELECT '${region}',id,0,${tile.west},${tile.south},${tile.east},${tile.north} FROM seasons WHERE id IN (${active});`,
+    );
+    sql.push(
+      `INSERT OR IGNORE INTO chunk_versions SELECT id,'${region}',0,0,1 FROM seasons WHERE id IN (${active});`,
+    );
+    for (const plot of virtualTerritories('', region))
+      sql.push(
+        `INSERT OR IGNORE INTO territories(id,region_id,season_id,x,y,cx,cy,terrain_type,is_starter) SELECT id||':${region}:${plot.x}:${plot.y}','${region}',id,${plot.x},${plot.y},0,0,'${plot.terrain_type}',${plot.is_starter} FROM seasons WHERE id IN (${active});`,
+      );
+    const user = `demo-world-${name.toLowerCase()}`,
+      display = `World Demo ${name}`,
       subject = display.toLowerCase();
     sql.push(
       `INSERT OR IGNORE INTO users(id,auth_provider,provider_subject,created_at,is_test) VALUES('${user}','local','${subject}',unixepoch(),1);`,
@@ -49,5 +83,7 @@ if (command === 'reset') {
     '--file',
     '.wrangler/world-demo.sql',
   ]);
-  console.log('Created labeled Demo Mira, Demo Sol and Demo Jun playtest accounts and offers.');
+  console.log(
+    'Created labeled World Demo Mira, World Demo Sol and World Demo Jun playtest accounts and offers.',
+  );
 } else throw Error('Use npm run db:reset or npm run db:demo. No remote operations are supported.');

@@ -9,3 +9,11 @@ Sell orders escrow full lots. A purchase fills the full lot at its integer unit 
 Sources: starting grants and production. Sinks: facilities and tax. Inspect issuance/concentration before adjusting rates. Test players are marked separately.
 
 Gems remain inactive. The display-only $1/100, $10/1,100 and $100/12,000 packs are proposals. There is no purchase, transfer, conversion or grant endpoint. Cosmetic entitlement/payment/refund ledgers require separate implementation and review.
+
+## Population income
+
+Imported plot estimates add `floor(population / 100)` Gold per complete six-hour turn to the existing 1 Gold base income. Resource production remains available for construction and trading. Income uses each plot separately, so the account total sums the rounded plot rates. Population is fractional source data; the display rounds residents to the nearest person. Missing data is distinct from a measured zero and provides no population bonus.
+
+`territory_population` stores the year, source raster URL, exact plot GeoJSON footprint and effective timestamp. Snapshots are inserted once for each season-specific plot ID; repeated imports do not change a running season's rate. Population income cannot predate its snapshot, ownership or the plot production clock. The existing atomic settlement trigger writes base and population income together into the Gold ledger, retains partial base-production time, and caps both at 28 turns. Snapshot activation begins with complete production periods after import; a partial first period earns only base production.
+
+This is an initial population-based economy alongside the existing construction-resource system. Population estimates are geographic reference data, not player accounts or simulated citizens that players buy or move. Global coverage is incremental; unimported plots remain explicitly unknown.

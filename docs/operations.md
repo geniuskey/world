@@ -2,7 +2,7 @@
 
 ## Local playtest
 
-`npm run db:migrate && npm run dev` starts the persistent world at http://localhost:5174. `npm run db:demo` adds three explicitly labeled playtest accounts with market offers: **Demo Mira**, **Demo Sol**, **Demo Jun**. Enter one of those names through local login to resume it. The seed is repeatable and cannot target remote D1.
+`npm run db:migrate && npm run dev` starts the persistent world at http://localhost:5174. `npm run db:demo` adds three explicitly labeled playtest accounts with market offers: **World Demo Mira**, **World Demo Sol**, **World Demo Jun**. Enter one of those names through local login to resume it. The seed is repeatable and cannot target remote D1.
 
 Stop the dev server before `npm run db:reset`; it deletes only this checkout's local D1 files and reapplies migrations. Browser tests use `.wrangler/e2e` on ports 5175/8789, independently of development state. Vitest creates temporary D1 instances and disposes them afterward.
 
@@ -28,13 +28,13 @@ Counters include Worker API requests. D1 row counters measure game/auth queries;
 
 An expired active season rejects new game commands while its records remain readable. Starting the next season is an operator operation after backup and validation, not a destructive scheduled reset.
 
-Generate fresh logical cells using a new identifier and an explicit output path:
+Generate a new season using a new identifier and an explicit output path:
 
 ```sh
 node scripts/world.mjs s2 30 .wrangler/season-s2.sql
 ```
 
-Use `7` for a pilot. The default seed command targets the initial migration for authoring only; never regenerate an applied migration to reset production. The new file inserts the season, three regions and 1,728 tiles. End the preceding season only after its `ends_at` has passed, then apply the reviewed new-season file to the intended database. Do not reuse a season ID. The unique active-season constraint blocks accidental overlap.
+Use `7` for a pilot. The default output is `.wrangler/season-<id>.sql`; never overwrite an applied migration to reset production. The file inserts only the season. Global regions and plots are created on demand, with no preset cities. End the preceding season only after its `ends_at` has passed, then apply the reviewed new-season file to the intended database. Do not reuse a season ID. The unique active-season constraint blocks accidental overlap.
 
 Existing users choose a new starting region and receive a fresh seasonal grant. Old territory, ledgers, trades and account achievements remain. Expired offers remain frozen in the historical season's escrow and cannot transfer assets into a new season. The integration suite simulates this transition and checks preserved history and achievements.
 

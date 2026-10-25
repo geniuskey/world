@@ -4,7 +4,7 @@
 2. Deliver Phase 1 plus resource trading. Combat, land transfers, payments and growth features stay deferred/off.
 3. Google OIDC avoids an outbound mail service and uses verified provider identity. Tradeoff: Google account required. Loopback-only local login supports credential-free development and is never a production fallback.
 4. SQLite command triggers provide D1 atomicity without a coordination server; integration tests exercise actual workerd/D1.
-5. Three 24×24 regions, 8×8 chunks. Natural Earth global silhouette; logical terrain generated once, unrelated to actual parcels.
+5. A global grid with on-demand 8×8 settlement regions and 8×8 chunks; no preset cities. The original three pilot regions are archived, preserving existing account assets and history. MapLibre provides a worldwide OpenStreetMap basemap and 2D/globe switching. Geographic grid v1 anchors cells at approximately 250 m to each region center; existing generated resource terrain is game data, unrelated to actual parcels. See map-data.md.
 6. One facility level, seven-day production cap, whole-lot trades, rounded-up 3% tax. These reversible rules are published in the UI/docs.
 7. First-party daily aggregate metrics/account visits; no persistent anonymous identity or third-party analytics. Test accounts marked.
 8. Expiry blocks writes and preserves history. An operator script initializes a new season; no destructive automatic reset.

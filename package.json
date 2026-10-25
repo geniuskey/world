@@ -19,12 +19,14 @@
     "db:demo": "node scripts/local-db.mjs demo",
     "season:generate": "node scripts/world.mjs",
     "deploy": "npm run build && wrangler deploy --env=\"\"",
-    "format": "prettier --write src worker shared tests scripts *.ts *.json *.jsonc docs README.md .github"
+    "format": "prettier --write src worker shared tests scripts *.ts *.json *.jsonc docs README.md .github",
+    "population:import": "node scripts/population.mjs"
   },
   "dependencies": {
     "hono": "^4.10.0",
     "jose": "^6.2.0",
     "lucide-react": "^0.468.0",
+    "maplibre-gl": "^6.15.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.9.0",
@@ -39,6 +41,7 @@
     "@vitejs/plugin-react": "^6.1.0",
     "concurrently": "^9.2.0",
     "esbuild": "^0.28.2",
+    "geotiff": "^3.0.5",
     "miniflare": "5.20261019.2-beta",
     "prettier": "^3.9.10",
     "typescript": "^5.9.0",
@@ -48,5 +51,6 @@
   },
   "overrides": {
     "undici": "^7.30.1"
-  }
+  },
+  "homepage": "https://macstudio.nutria-sole.ts.net:5174/"
 }

@@ -9,6 +9,7 @@ export type Env = {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET?: string;
   MARKET_ENABLED: string;
+  WORLD_AUTO_SPLIT_ENABLED?: string;
   COMBAT_ENABLED: string;
   PAYMENTS_ENABLED: string;
   LAND_TRADING_ENABLED: string;

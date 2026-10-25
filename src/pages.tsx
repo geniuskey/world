@@ -88,6 +88,12 @@ export function AccountPage() {
         </Empty>
       </main>
     );
+  const populationPlots = state.territories.filter((tile) => tile.population != null);
+  const population = populationPlots.reduce((sum, tile) => sum + tile.population!, 0);
+  const goldIncome = state.territories.reduce(
+    (sum, tile) => sum + 1 + Math.floor((tile.population ?? 0) / 100),
+    0,
+  );
   const milestones = (['pioneer', 'grower', 'builder'] as const).map(
     (kind) => [kind, state.achievements.some((a) => a.kind === kind)] as const,
   );
@@ -142,13 +148,20 @@ export function AccountPage() {
           <Coins size={22} />
           <small>{t('gold')}</small>
           <strong>{state.gold_balance.toLocaleString()}</strong>
-          <span>{t('balance')}</span>
+          <span>
+            +{goldIncome.toLocaleString()} Gold · {t('perTurn')}
+          </span>
         </div>
         <div className="stat-card">
           <Sprout size={22} />
-          <small>{t('production')}</small>
-          <strong>{Object.values(state.production).reduce((a, b) => a + b, 0)}</strong>
-          <span>{t('perTurn')}</span>
+          <small>{t('knownPopulation')}</small>
+          <strong>{populationPlots.length ? Math.round(population).toLocaleString() : '—'}</strong>
+          <span>
+            {t('populationCoverage', {
+              known: populationPlots.length,
+              total: state.territories.length,
+            })}
+          </span>
         </div>
       </div>
       <div className="account-grid">

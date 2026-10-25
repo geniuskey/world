@@ -28,6 +28,9 @@ export type Region = {
   height: number;
   season_id: string;
   map_version: number;
+  world_split?: number | null;
+  world_level?: number | null;
+  parent_id?: string | null;
   owned: number;
   available: number;
 };
@@ -46,6 +49,9 @@ export type Territory = {
   version: number;
   structure_type: string | null;
   is_starter: number;
+  population?: number | null;
+  population_year?: number | null;
+  population_source?: string | null;
 };
 export type Player = {
   id: string;
@@ -94,6 +100,12 @@ export type WorldConfig = {
   server_time: number;
   turn_seconds: number;
   chunk_size: number;
+  world_grid: {
+    initial_tiles: number;
+    split_players: number;
+    max_level: number;
+    auto_split: boolean;
+  };
   flags: { market: boolean; combat: boolean; payments: boolean; land_trading: boolean };
   auth: { google: boolean; dev: boolean };
 };

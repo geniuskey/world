@@ -15,6 +15,8 @@ if (
 
 export default defineConfig({
   plugins: [react()],
+  cacheDir: process.env.WORLD_API_ORIGIN ? 'node_modules/.vite-e2e' : 'node_modules/.vite',
+  worker: { format: 'es' },
   server: {
     port: 5174,
     strictPort: true,

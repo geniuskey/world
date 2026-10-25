@@ -1,3 +1,4 @@
+import { prepareSettlement, splitTile, worldTile } from './world';
 import { ApiError } from './types';
 import type { Db } from './db';
 import {
@@ -74,15 +75,20 @@ export async function command(
   );
   return { action_id: actionId, result: JSON.parse(action!.result_json), replayed: false };
 }
-export async function join(db: Db, user: string, region: string, now: number) {
+export async function join(db: Db, user: string, region: string, now: number, autoSplit = false) {
   const season = await currentSeason(db);
   const existing = await db.first(
     'SELECT user_id FROM player_state WHERE user_id=? AND season_id=?',
     user,
     season.id,
   );
-  if (!existing)
-    await command(db, user, season.id, 'join', { region_id: region }, `join:${season.id}`, now);
+  if (!existing) {
+    if (now < season.begins_at || now >= season.ends_at) throw new ApiError('SEASON_ENDED', 409);
+    const target = await prepareSettlement(db, season.id, region, autoSplit);
+    await command(db, user, season.id, 'join', { region_id: target }, `join:${season.id}`, now);
+    const tile = await worldTile(db, season.id, target);
+    if (tile && autoSplit) await splitTile(db, season.id, tile);
+  }
 }
 export async function playerState(db: Db, user: Player, now: number): Promise<PlayerState> {
   const season = await currentSeason(db);
@@ -95,7 +101,7 @@ export async function playerState(db: Db, user: Player, now: number): Promise<Pl
   }>('SELECT * FROM player_state WHERE user_id=? AND season_id=?', user.id, season.id);
   if (!state) throw new ApiError('NOT_JOINED', 409);
   let territories = await db.all<Territory & { production_at: number }>(
-    'SELECT * FROM territories WHERE owner_user_id=? AND season_id=? ORDER BY acquired_at,id LIMIT 65536',
+    'SELECT t.*,p.population,p.year AS population_year,p.source AS population_source FROM territories t LEFT JOIN territory_population p ON p.territory_id=t.id WHERE owner_user_id=? AND season_id=? ORDER BY acquired_at,t.id LIMIT 65536',
     user.id,
     season.id,
   );
@@ -111,7 +117,7 @@ export async function playerState(db: Db, user: Player, now: number): Promise<Pl
       season.id,
     ))!;
     territories = await db.all<Territory & { production_at: number }>(
-      'SELECT * FROM territories WHERE owner_user_id=? AND season_id=? ORDER BY acquired_at,id LIMIT 65536',
+      'SELECT t.*,p.population,p.year AS population_year,p.source AS population_source FROM territories t LEFT JOIN territory_population p ON p.territory_id=t.id WHERE owner_user_id=? AND season_id=? ORDER BY acquired_at,t.id LIMIT 65536',
       user.id,
       season.id,
     );

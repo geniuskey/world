@@ -1,3 +1,4 @@
+import { rootTile, worldTileFromId } from '../shared/worldGrid';
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import { build } from 'esbuild';
 import { Miniflare, Log, LogLevel, convertV4MiniflareOptions } from 'miniflare';
@@ -40,7 +41,10 @@ async function request(
     body: text ? JSON.parse(text) : null,
   };
 }
-async function actor(name = `Settler ${++counter}`, region = 'han'): Promise<Actor> {
+async function actor(
+  name = `Settler ${++counter}`,
+  region = 'earth2:800:600:0:0:0:0:0:0',
+): Promise<Actor> {
   const login = await request('/auth/dev', {
     display_name: name,
     region_id: region,
@@ -63,7 +67,7 @@ const buy = async (a: Actor, order: string, key = uuid()) =>
   request(`/market/orders/${order}/buy`, { idempotency_key: key }, a.cookie);
 const cancel = async (a: Actor, order: string, key = uuid()) =>
   request(`/market/orders/${order}/cancel`, { idempotency_key: key }, a.cookie);
-async function place(a: Actor, x: number, y: number, region = 'lakes') {
+async function place(a: Actor, x: number, y: number, region = 'earth2:300:700:0:0:0:0:0:0') {
   await db
     .prepare(
       'UPDATE territories SET owner_user_id=NULL,production_at=NULL,acquired_at=NULL WHERE owner_user_id=?',
@@ -126,6 +130,7 @@ beforeAll(async () => {
             APP_ORIGIN: origin,
             DEV_AUTH_ENABLED: 'true',
             MARKET_ENABLED: 'true',
+            WORLD_AUTO_SPLIT_ENABLED: 'true',
             GOOGLE_CLIENT_ID: '',
             COMBAT_ENABLED: 'false',
             PAYMENTS_ENABLED: 'false',
@@ -148,25 +153,82 @@ beforeAll(async () => {
       if (sql) await db.prepare(sql).run();
     }
   }
+  // Large, allocated world-grid fixtures isolate economic tests from the 8×8
+  // on-demand allocation tests. Legacy pilot data is never used as a join target.
+  for (const [legacy, target] of [
+    ['han', 'earth2:800:600:0:0:0:0:0:0'],
+    ['tagus', 'earth2:700:500:0:0:0:0:0:0'],
+    ['lakes', 'earth2:300:700:0:0:0:0:0:0'],
+  ]) {
+    const tile = worldTileFromId(target)!;
+    await db
+      .prepare(
+        `INSERT INTO regions(id,season_id,name,subtitle,longitude,latitude,width,height,status,land_count)
+      SELECT ?,season_id,?,'Test fixture',longitude,latitude,width,height,'open',land_count FROM regions WHERE id=?`,
+      )
+      .bind(target, target, legacy)
+      .run();
+    await db
+      .prepare(
+        "INSERT INTO world_tiles(id,season_id,level,west,south,east,north) VALUES(?,'s1',6,?,?,?,?)",
+      )
+      .bind(target, tile.west, tile.south, tile.east, tile.north)
+      .run();
+    await db
+      .prepare(
+        'INSERT INTO chunk_versions SELECT season_id,?,cx,cy,version FROM chunk_versions WHERE region_id=?',
+      )
+      .bind(target, legacy)
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO territories(id,region_id,season_id,x,y,cx,cy,terrain_type,is_starter)
+      SELECT replace(id,?,?),?,season_id,x,y,cx,cy,terrain_type,is_starter FROM territories WHERE region_id=?`,
+      )
+      .bind(legacy, target, target, legacy)
+      .run();
+  }
 });
 afterAll(async () => {
   await mf?.dispose();
 });
 
 describe('free world and authentication', () => {
+  it('excludes archived pilot cities from exploration and rejects new settlement there', async () => {
+    const regions = await request('/regions');
+    expect(regions.body.regions.every((r: { id: string }) => r.id.startsWith('earth2:'))).toBe(
+      true,
+    );
+    const login = await request('/auth/dev', {
+      display_name: 'No preset city',
+      region_id: 'han',
+      locale: 'en',
+      accept_rules: true,
+    });
+    expect(login.status).toBe(404);
+    expect(login.body.error.code).toBe('NOT_FOUND');
+  });
+
   it('serves a public world with cached, bounded chunks and no private profile', async () => {
     const config = await request('/world/config');
     expect(config.status).toBe(200);
     expect(config.body.flags.payments).toBe(false);
-    const chunk = await request('/map/chunks?region=han&cx=0&cy=0');
+    const chunk = await request('/map/chunks?region=earth2:800:600:0:0:0:0:0:0&cx=0&cy=0');
     expect(chunk.status).toBe(200);
     expect(chunk.body.tiles).toHaveLength(64);
     expect(chunk.headers.get('etag')).toBeTruthy();
-    const same = await request('/map/chunks?region=han&cx=0&cy=0', undefined, '', {
-      headers: { 'If-None-Match': chunk.headers.get('etag')! },
-    });
+    const same = await request(
+      '/map/chunks?region=earth2:800:600:0:0:0:0:0:0&cx=0&cy=0',
+      undefined,
+      '',
+      {
+        headers: { 'If-None-Match': chunk.headers.get('etag')! },
+      },
+    );
     expect(same.status).toBe(304);
-    expect((await request('/map/chunks?region=han&cx=32&cy=0')).status).toBe(400);
+    expect((await request('/map/chunks?region=earth2:800:600:0:0:0:0:0:0&cx=32&cy=0')).status).toBe(
+      400,
+    );
     expect((await request('/me/state')).status).toBe(401);
   });
   it('allocates distinct starting tiles in concurrent signup and resumes a session', async () => {
@@ -192,7 +254,7 @@ describe('free world and authentication', () => {
       .first<{ n: number }>();
     expect(grant!.n).toBe(1);
   });
-  it('rejects a full starting region without granting any inventory', async () => {
+  it('rejects an unknown starting region without granting any inventory', async () => {
     const before = await db
       .prepare('SELECT COUNT(*) AS n FROM player_state')
       .first<{ n: number }>();
@@ -205,7 +267,7 @@ describe('free world and authentication', () => {
           accept_rules: true,
         })
       ).body.error.code,
-    ).toBe('REGION_FULL');
+    ).toBe('NOT_FOUND');
     const after = await db.prepare('SELECT COUNT(*) AS n FROM player_state').first<{ n: number }>();
     expect(after!.n).toBe(before!.n);
   });
@@ -215,7 +277,12 @@ describe('free world and authentication', () => {
       (
         await request(
           '/auth/dev',
-          { display_name: 'Prod', region_id: 'han', locale: 'en', accept_rules: true },
+          {
+            display_name: 'Prod',
+            region_id: 'earth2:800:600:0:0:0:0:0:0',
+            locale: 'en',
+            accept_rules: true,
+          },
           '',
           { host: 'https://world.example' },
         )
@@ -225,7 +292,7 @@ describe('free world and authentication', () => {
       (
         await request(
           '/actions/claim',
-          { territory_id: 's1:han:3:2', idempotency_key: uuid() },
+          { territory_id: 's1:earth2:800:600:0:0:0:0:0:0:3:2', idempotency_key: uuid() },
           a.cookie,
           { origin: 'https://evil.example' },
         )
@@ -257,7 +324,10 @@ describe('claims, recovery and production', () => {
     const [a, b] = await Promise.all([actor(), actor()]);
     await place(a, 2, 20);
     await place(b, 4, 20);
-    const results = await Promise.all([claim(a, 's1:lakes:3:20'), claim(b, 's1:lakes:3:20')]);
+    const results = await Promise.all([
+      claim(a, 's1:earth2:300:700:0:0:0:0:0:0:3:20'),
+      claim(b, 's1:earth2:300:700:0:0:0:0:0:0:3:20'),
+    ]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
     const states = await Promise.all([state(a), state(b)]);
     expect(states.map((s) => s.territory_count).sort()).toEqual([1, 2]);
@@ -268,18 +338,22 @@ describe('claims, recovery and production', () => {
     await place(a, 8, 20);
     const key = uuid();
     const results = await Promise.all([
-      claim(a, 's1:lakes:9:20', key),
-      claim(a, 's1:lakes:9:20', key),
+      claim(a, 's1:earth2:300:700:0:0:0:0:0:0:9:20', key),
+      claim(a, 's1:earth2:300:700:0:0:0:0:0:0:9:20', key),
     ]);
     expect(results.every((r) => r.status === 200)).toBe(true);
     expect(results[0].body.action_id).toBe(results[1].body.action_id);
     expect((await state(a)).energy_value).toBe(3);
-    expect((await claim(a, 's1:lakes:8:19', key)).body.error.code).toBe('IDEMPOTENCY_CONFLICT');
+    expect((await claim(a, 's1:earth2:300:700:0:0:0:0:0:0:8:19', key)).body.error.code).toBe(
+      'IDEMPOTENCY_CONFLICT',
+    );
   });
   it('rejects diagonal, water, client balances and overspending energy', async () => {
     const a = await actor();
     await place(a, 12, 20);
-    expect((await claim(a, 's1:lakes:11:19')).body.error.code).toBe('NOT_ADJACENT');
+    expect((await claim(a, 's1:earth2:300:700:0:0:0:0:0:0:11:19')).body.error.code).toBe(
+      'NOT_ADJACENT',
+    );
     const water = await db
       .prepare("SELECT id FROM territories WHERE terrain_type='water' LIMIT 1")
       .first<{ id: string }>();
@@ -288,7 +362,11 @@ describe('claims, recovery and production', () => {
       (
         await request(
           '/actions/claim',
-          { territory_id: 's1:lakes:12:19', idempotency_key: uuid(), gold_balance: 5000 },
+          {
+            territory_id: 's1:earth2:300:700:0:0:0:0:0:0:12:19',
+            idempotency_key: uuid(),
+            gold_balance: 5000,
+          },
           a.cookie,
         )
       ).status,
@@ -299,7 +377,9 @@ describe('claims, recovery and production', () => {
       )
       .bind(a.id)
       .run();
-    expect((await claim(a, 's1:lakes:12:19')).body.error.code).toBe('NO_ENERGY');
+    expect((await claim(a, 's1:earth2:300:700:0:0:0:0:0:0:12:19')).body.error.code).toBe(
+      'NO_ENERGY',
+    );
   });
   it('settles production once under concurrent reads and retains partial time', async () => {
     const a = await actor();
@@ -320,6 +400,55 @@ describe('claims, recovery and production', () => {
     expect(clock!.now - clock!.production_at).toBeLessThan(135);
     await ledgerMatches(a);
   });
+  it('pays population income once, caps offline turns and exposes the source', async () => {
+    const a = await actor();
+    const tile = a.state.territories[0];
+    await db
+      .prepare('INSERT INTO territory_population VALUES(?,?,?,?,?,unixepoch()-?)')
+      .bind(tile.id, 1250.75, 2020, 'https://data.worldpop.org/test.tif', '{}', TURN_SECONDS * 40)
+      .run();
+    await db
+      .prepare('UPDATE territories SET production_at=unixepoch()-? WHERE id=?')
+      .bind(TURN_SECONDS * 40 + 123, tile.id)
+      .run();
+    const results = await Promise.all([state(a), state(a)]);
+    expect(results.every((s) => s.gold_balance === 100 + 28 * 13)).toBe(true);
+    const detail = await request(`/territories/${tile.id}`);
+    expect(detail.body.territory).toMatchObject({
+      population: 1250.75,
+      population_year: 2020,
+      population_source: 'https://data.worldpop.org/test.tif',
+    });
+    expect((await state(a)).territories[0].population).toBe(1250.75);
+    await ledgerMatches(a);
+  });
+  it('distinguishes zero population from missing data and does not backdate a new snapshot', async () => {
+    const a = await actor();
+    const tile = a.state.territories[0];
+    expect((await request(`/territories/${tile.id}`)).body.territory.population).toBeUndefined();
+    await db
+      .prepare('INSERT INTO territory_population VALUES(?,?,?,?,?,unixepoch())')
+      .bind(tile.id, 5000, 2020, 'https://data.worldpop.org/test.tif', '{}')
+      .run();
+    await db
+      .prepare('UPDATE territories SET production_at=unixepoch()-? WHERE id=?')
+      .bind(TURN_SECONDS * 2, tile.id)
+      .run();
+    expect((await state(a)).gold_balance).toBe(102);
+    await db
+      .prepare(
+        'UPDATE territory_population SET population=0,effective_at=unixepoch()-? WHERE territory_id=?',
+      )
+      .bind(TURN_SECONDS, tile.id)
+      .run();
+    await db
+      .prepare('UPDATE territories SET production_at=unixepoch()-? WHERE id=?')
+      .bind(TURN_SECONDS, tile.id)
+      .run();
+    expect((await state(a)).gold_balance).toBe(103);
+    expect((await request(`/territories/${tile.id}`)).body.territory.population).toBe(0);
+    await ledgerMatches(a);
+  });
   it('caps offline earnings at 28 turns and never rewards new territory retroactively', async () => {
     const a = await actor();
     await place(a, 2, 16);
@@ -327,7 +456,7 @@ describe('claims, recovery and production', () => {
       .prepare('UPDATE territories SET production_at=unixepoch()-? WHERE owner_user_id=?')
       .bind(TURN_SECONDS * 40, a.id)
       .run();
-    const result = await claim(a, 's1:lakes:3:16');
+    const result = await claim(a, 's1:earth2:300:700:0:0:0:0:0:0:3:16');
     expect(result.status).toBe(200);
     const current = await state(a);
     expect(current.gold_balance).toBe(128);
@@ -535,17 +664,20 @@ describe('operations and season boundaries', () => {
     const home = a.state.territories[0].id;
     await request('/structures/build', { territory_id: home, idempotency_key: uuid() }, a.cookie);
     await db.prepare("UPDATE seasons SET status='ended' WHERE id='s1'").run();
-    const seed = (await readFile('migrations/0003_world.sql', 'utf8'))
-      .replaceAll("'s1'", "'s2'")
-      .replaceAll("'s1:", "'s2:");
+    const seed =
+      "INSERT INTO seasons VALUES('s2',unixepoch(),unixepoch()+2592000,'active','global-v1')";
     try {
       for (const block of seed.split('-- statement')) {
         const sql = block.trim();
         if (sql) await db.prepare(sql).run();
       }
+      expect(
+        await db.prepare("SELECT COUNT(*) AS n FROM regions WHERE season_id='s2'").first('n'),
+      ).toBe(0);
       expect((await request('/me/state', undefined, a.cookie)).body.error.code).toBe('NOT_JOINED');
       expect(
-        (await request('/join', { region_id: 'han', accept_rules: true }, a.cookie)).status,
+        (await request('/join', { region_id: 'earth2:873:725', accept_rules: true }, a.cookie))
+          .status,
       ).toBe(200);
       const next = await state(a);
       expect(next.season.id).toBe('s2');
@@ -563,5 +695,100 @@ describe('operations and season boundaries', () => {
       await db.prepare("UPDATE seasons SET status='ended' WHERE id='s2'").run();
       await db.prepare("UPDATE seasons SET status='active' WHERE id='s1'").run();
     }
+  });
+});
+
+describe('world settlement zones', () => {
+  it('previews unallocated global zones without creating territory rows', async () => {
+    const allocatedBefore = await db.prepare('SELECT COUNT(*) AS n FROM world_tiles').first('n');
+    const regions = await request('/regions', undefined, '', {
+      headers: { 'cache-control': 'no-cache' },
+    });
+    expect(regions.body.regions.length).toBeLessThanOrEqual(128);
+    const overview = await request('/world/tiles');
+    expect(overview.body.total_tiles).toBe(1_048_576);
+    expect(overview.body.tiles.length).toBeLessThanOrEqual(2048);
+    expect(overview.body.stride).toBeGreaterThan(1);
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM world_tiles').first('n')).toBe(
+      allocatedBefore,
+    );
+    const virtualRegion = await request('/regions/earth2:873:725');
+    expect(virtualRegion.status).toBe(200);
+    expect(virtualRegion.body.region.id).toBe('earth2:873:725');
+    const preview = await request('/map/chunks?region=earth2:0:0&cx=0&cy=0');
+    expect(preview.status).toBe(200);
+    expect(preview.body.tiles).toHaveLength(64);
+    const detail = await request(`/territories/${preview.body.tiles[0].id}`);
+    expect(detail.body.territory).toEqual(preview.body.tiles[0]);
+    expect(
+      await db
+        .prepare("SELECT COUNT(*) AS n FROM territories WHERE region_id='earth2:0:0'")
+        .first('n'),
+    ).toBe(0);
+    expect((await request('/map/chunks?region=earth2:0:0&cx=1&cy=0')).status).toBe(404);
+    expect(await db.prepare('SELECT COUNT(*) AS n FROM world_tiles').first('n')).toBe(
+      allocatedBefore,
+    );
+  });
+  it('splits populated zones, preserves existing assets and routes stale selections into children', async () => {
+    const region = 'earth2:800:700';
+    const first = await actor(undefined, region);
+    const home = first.state.territories[0].id;
+    expect(
+      (
+        await request(
+          '/structures/build',
+          { territory_id: home, idempotency_key: uuid() },
+          first.cookie,
+        )
+      ).status,
+    ).toBe(200);
+    const before = await state(first);
+    for (let i = 1; i < 8; i++) await actor(undefined, region);
+    const bounds = rootTile(800, 700);
+    const zones = await request(
+      `/world/tiles?bbox=${bounds.west},${bounds.south},${bounds.east},${bounds.north}`,
+      undefined,
+      '',
+      {
+        headers: { 'cache-control': 'no-cache' },
+      },
+    );
+    expect((await request(`/regions/${region}`)).body.region.world_split).toBe(1);
+    expect(zones.body.total_tiles).toBe(1_048_579);
+    expect(
+      zones.body.tiles.filter((t: { parent_id: string }) => t.parent_id === region),
+    ).toHaveLength(4);
+    const next = await actor(undefined, region);
+    expect(next.state.territories[0].region_id).toBe(`${region}:0`);
+    const after = await state(first);
+    expect(after.territories).toEqual(before.territories);
+    expect(after.gold_balance).toBe(before.gold_balance);
+    expect(after.resources).toEqual(before.resources);
+    expect(after.production).toEqual(before.production);
+    const target = `${after.season.id}:${region}:1:0`;
+    expect((await claim(first, target)).status).toBe(200);
+    // Independent requests cannot duplicate children or allocate the same starter.
+    const concurrent = await Promise.all([actor(undefined, region), actor(undefined, region)]);
+    expect(new Set(concurrent.map((a) => a.state.territories[0].id)).size).toBe(2);
+    const count = await db
+      .prepare('SELECT COUNT(*) AS n FROM world_tiles WHERE parent_id=? AND season_id=?')
+      .bind(region, after.season.id)
+      .first('n');
+    expect(count).toBe(4);
+  });
+});
+
+describe('bounded million-tile view API', () => {
+  it('handles date-line viewports and rejects malformed bounds', async () => {
+    const view = await request('/world/tiles?bbox=179,-1,181,1');
+    expect(view.status).toBe(200);
+    expect(view.body.tiles.length).toBeLessThanOrEqual(2048);
+    expect(view.body.tiles.some((t: { west: number }) => t.west < -179)).toBe(true);
+    expect(view.body.tiles.some((t: { east: number }) => t.east > 179)).toBe(true);
+    for (const bbox of ['1,2,0,3', '0,-91,1,1', '0,0,361,1', 'NaN,0,1,1', '0,0,1'])
+      expect((await request(`/world/tiles?bbox=${bbox}`)).status).toBe(400);
+    expect((await request('/regions/earth2:1024:0')).status).toBe(404);
+    expect((await request('/regions/earth2:0:0:0')).status).toBe(404);
   });
 });

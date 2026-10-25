@@ -24,7 +24,7 @@ npm run test:e2e
 
 Integration tests run the actual Worker and migrations against local D1. Browser tests cover desktop and 360px mobile, including two-finger pinch. They start their own servers on ports 5175/8789 and reset only `.wrangler/e2e`, preserving development saves. Optional secrets are documented in `.env.example`; never commit `.dev.vars`.
 
-The current checks cover 28 server/rule/authentication scenarios and 12 browser scenarios. Google tests use a signed mock identity provider; a live OAuth client still needs to be configured and checked before deployment.
+The current checks cover 28 server/rule/authentication scenarios, 5 geographic mapping scenarios and 16 browser scenarios. Google tests use a signed mock identity provider; a live OAuth client still needs to be configured and checked before deployment.
 
 ### Tailscale preview
 
@@ -50,4 +50,8 @@ Open that HTTPS address on a device connected to the same tailnet. The explicitl
 
 [Plan](docs/plan.md) · [Decisions](docs/decisions.md) · [Architecture](docs/architecture.md) · [Economy](docs/economy.md) · [Rules](docs/game-rules.md) · [Data](docs/data-model.md) · [Security](docs/security.md) · [Operations](docs/operations.md) · [Map attribution](docs/map-data.md)
 
-Territory is a seasonal game permission, unrelated to real property. The global silhouette uses public-domain Natural Earth data; regional cells are fictional logical terrain.
+Explore a simplified geographic basemap (OpenFreeMap/OpenStreetMap) in 2D or on a 3D globe. Territory cells are geographically anchored at approximately 250 m per cell, with location coordinates and an external map link. Resource terrain and boundaries are game data; territory is a seasonal game permission, unrelated to real property. See [map data](docs/map-data.md) for geographic mapping, tile service configuration and attribution.
+
+The world begins with **1,048,576 logical tiles (1,024 × 1,024)**. Roots are calculated from coordinates, with no million-row seed. The map requests at most 2,048 display cells for its current viewport and reveals individual tiles as you zoom. Click the map or enter coordinates to explore. Actual local plots are allocated only at the first settlement. Existing saves remain intact. Automatic subdivision is disabled pending a capacity decision; the subdivision infrastructure remains available behind `WORLD_AUTO_SPLIT_ENABLED`. Apply local migrations with `npm run db:migrate`. See [world tiles](docs/world-tiles.md).
+
+The map fills the play viewport, with collapsible region/coordinate controls and a floating plot inspector. Imported WorldPop population estimates generate additional Gold based on residents, with year/source/coverage shown in the UI. See [population data and import commands](docs/map-data.md#population-estimates) and [income rules](docs/economy.md#population-income). Development homepage: https://macstudio.nutria-sole.ts.net:5174/.

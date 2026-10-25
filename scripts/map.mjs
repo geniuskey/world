@@ -30,4 +30,5 @@ await writeFile(
   'public/world.svg',
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 540"><!-- Natural Earth 1:110m land. Public domain. ${source} --><g fill="#c8d8c3" stroke="#aabfa6" stroke-width="0.6" fill-rule="evenodd">${paths.join('')}</g></svg>`,
 );
-console.log('Wrote public/world.svg');
+await writeFile('public/land.geojson', JSON.stringify(data));
+console.log('Wrote public/world.svg and public/land.geojson');

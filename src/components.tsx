@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode, type FormEvent } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Globe2,
   ArrowUpRight,
@@ -16,8 +16,9 @@ import {
   Flag,
 } from 'lucide-react';
 import { useWorld } from './state';
-import { post } from './api';
+import { api, post } from './api';
 import type { TextKey } from './i18n';
+import { worldTileFromId, regionForTile } from '../shared/worldGrid';
 import type { ResourceKind } from '../shared/game';
 
 export const resourceIcon = { food: Wheat, wood: TreePine, iron: Mountain };
@@ -197,10 +198,11 @@ export function Modal({
   );
 }
 export function AuthModal() {
-  const { t, locale, config, regions, refresh, setAuthOpen, user, message } = useWorld();
+  const { t, locale, config, refresh, setAuthOpen, user, message } = useWorld();
   const navigate = useNavigate();
+  const location = useLocation();
+  const region = decodeURIComponent(location.pathname.match(/^\/region\/(.+)$/)?.[1] || '');
   const [name, setName] = useState(''),
-    [region, setRegion] = useState('han'),
     [accepted, setAccepted] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState('');
@@ -229,14 +231,32 @@ export function AuthModal() {
         });
       await refresh();
       void post('/events', { event: 'visit' }).catch(() => {});
+      const settled = await api<{ territories: { region_id: string }[] }>('/me/state', {
+        fresh: true,
+      });
       close();
-      navigate(`/region/${region}`);
+      navigate(`/region/${settled.territories[0]?.region_id || region}`);
     } catch (e) {
       setError(message(e));
     } finally {
       setBusy(false);
     }
   };
+  if (!worldTileFromId(region))
+    return (
+      <Modal title={t('chooseOnMap')} onClose={close}>
+        <p>{t('chooseOnMapBody')}</p>
+        <button
+          className="button primary full"
+          onClick={() => {
+            close();
+            navigate('/');
+          }}
+        >
+          {t('chooseOnMap')}
+        </button>
+      </Modal>
+    );
   return (
     <Modal title={t('welcome')} onClose={close}>
       <p>{t('welcomeBody')}</p>
@@ -258,13 +278,8 @@ export function AuthModal() {
         )}
         <label>
           {t('startRegion')}
-          <select value={region} onChange={(e) => setRegion(e.target.value)}>
-            {regions.map((r) => (
-              <option key={r.id} value={r.id}>
-                {t(r.id as TextKey)}
-              </option>
-            ))}
-          </select>
+          <input readOnly value={regionForTile(worldTileFromId(region)!, '').name} />
+          <input type="hidden" name="region_id" value={region} />
         </label>
         <label className="checkbox">
           <input
