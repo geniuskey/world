@@ -15,6 +15,7 @@ test.beforeEach(async ({ page, isMobile }) => {
         })
       : route.fulfill({ status: 204 }),
   );
+  await page.route('https://elevation-tiles-prod.s3.amazonaws.com/**', (route) => route.abort());
 });
 
 async function insideViewport(page: Page, locator: Locator) {

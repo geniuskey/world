@@ -13,7 +13,13 @@ import { worldTilesForView, WORLD_INITIAL_TILES, type WorldTile } from '../share
 import { plotAt, plotTerritoryId } from '../shared/plots';
 import { coordinates, gridCell, gridPoint } from '../shared/geography';
 import type { TextKey } from './i18n';
-import { gameMapStyle, placeName as placeLabel, placeLabelLayers } from './mapStyle';
+import {
+  gameMapStyle,
+  placeName as placeLabel,
+  placeLabelLayers,
+  peakLabel,
+  RELIEF_ATTRIBUTION_URL,
+} from './mapStyle';
 import { placeAt, usePlace } from './places';
 import { placeName } from '../shared/places';
 import { MapTools, useMapActivity } from './MapTools';
@@ -247,8 +253,9 @@ export function Atlas({
       update();
       updateBounds();
     });
-    map.on('error', () => {
-      setBasemapError(true);
+    // Hillshading is decoration; missing elevation tiles leave the map usable.
+    map.on('error', (event) => {
+      if ((event as { sourceId?: string }).sourceId !== 'relief') setBasemapError(true);
     });
     map.on('sourcedata', (event) => {
       if (event.sourceId === 'basemap' && event.sourceDataType === 'content')
@@ -358,8 +365,9 @@ export function Atlas({
   }, [zoneBounds, revision, retry]);
   useEffect(() => {
     if (!ready) return;
-    for (const { id } of placeLabelLayers)
+    for (const { id } of [...placeLabelLayers, { id: 'water-names' }])
       mapRef.current?.setLayoutProperty(id, 'text-field', placeLabel(locale));
+    mapRef.current?.setLayoutProperty('peak-names', 'text-field', peakLabel(locale));
   }, [ready, locale]);
   useEffect(() => {
     if (ready) mapRef.current?.setProjection({ type: globe ? 'globe' : 'mercator' });
@@ -825,6 +833,10 @@ export function Atlas({
         {' · '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
           © OpenStreetMap contributors
+        </a>
+        {' · '}
+        <a href={RELIEF_ATTRIBUTION_URL} target="_blank" rel="noreferrer">
+          Terrain Tiles
         </a>
       </div>
       <div className="earth-center">{coordinates([view.lng, view.lat])}</div>

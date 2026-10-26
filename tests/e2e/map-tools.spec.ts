@@ -22,6 +22,7 @@ test.beforeEach(async ({ page }) => {
         })
       : route.fulfill({ status: 204 }),
   );
+  await page.route('https://elevation-tiles-prod.s3.amazonaws.com/**', (route) => route.abort());
 });
 
 test('neighbourhood search opens real places and saved regions survive reload', async ({

@@ -8,6 +8,17 @@ export const placeName = (locale: string): ExpressionSpecification => [
 ];
 
 // Keep names available at settlement scale, with a hierarchy as the user zooms in.
+// Peak name with its elevation in metres underneath, when OpenStreetMap records one.
+export const peakLabel = (locale: string): ExpressionSpecification => [
+  'format',
+  '▲ ',
+  { 'text-color': '#8a6f4d' },
+  placeName(locale),
+  {},
+  ['case', ['has', 'ele'], ['concat', '\n', ['to-string', ['get', 'ele']], ' m'], ''],
+  { 'font-scale': 0.85 },
+];
+
 export const placeLabelLayers = [
   { id: 'country-names', classes: ['country'], minzoom: 0, maxzoom: 8, size: 13 },
   { id: 'province-names', classes: ['state', 'province'], minzoom: 5, size: 13 },
@@ -21,6 +32,34 @@ export const placeLabelLayers = [
     size: 12,
   },
 ];
+// Terrarium-encoded elevation from the public AWS Terrain Tiles (Tilezen/Mapzen) for hillshading.
+export const RELIEF_TILES =
+  'https://elevation-tiles-prod.s3.amazonaws.com/terrarium/{z}/{x}/{y}.png';
+export const RELIEF_ATTRIBUTION_URL =
+  'https://github.com/tilezen/joerd/blob/master/docs/attribution.md';
+
+// Muted OpenMapTiles land cover and land use, so forests, fields and towns read at a glance.
+const landcoverColors: [string, string][] = [
+  ['wood', '#c6d9ae'],
+  ['grass', '#dbe6c2'],
+  ['farmland', '#ebe8c6'],
+  ['wetland', '#d0e2d2'],
+  ['sand', '#efe5c6'],
+  ['rock', '#d9d6cc'],
+  ['ice', '#f3f6f6'],
+];
+const landuseColors: [string, string][] = [
+  ['residential', '#e4dfd4'],
+  ['suburb', '#e4dfd4'],
+  ['neighbourhood', '#e4dfd4'],
+  ['commercial', '#e2d9d0'],
+  ['retail', '#e2d9d0'],
+  ['industrial', '#dcd8d0'],
+  ['quarry', '#d9d6cc'],
+];
+const classColor = (colors: [string, string][], fallback: string): ExpressionSpecification =>
+  ['match', ['get', 'class'], ...colors.flat(), fallback] as unknown as ExpressionSpecification;
+
 export function gameMapStyle(locale: string): StyleSpecification {
   return {
     version: 8,
@@ -36,6 +75,14 @@ export function gameMapStyle(locale: string): StyleSpecification {
         url: import.meta.env.VITE_MAP_SOURCE_URL || 'https://tiles.openfreemap.org/planet',
         attribution: '© OpenMapTiles · © OpenStreetMap contributors',
       },
+      relief: {
+        type: 'raster-dem',
+        tiles: [RELIEF_TILES],
+        encoding: 'terrarium',
+        tileSize: 256,
+        maxzoom: 15,
+        attribution: 'Terrain Tiles · Mapzen, USGS, NASA SRTM and others',
+      },
     },
     layers: [
       { id: 'ocean', type: 'background', paint: { 'background-color': '#b9d7d9' } },
@@ -44,6 +91,55 @@ export function gameMapStyle(locale: string): StyleSpecification {
         type: 'fill',
         source: 'land',
         paint: { 'fill-color': '#e3ead6', 'fill-outline-color': '#a6b697' },
+      },
+      {
+        id: 'landcover',
+        type: 'fill',
+        source: 'basemap',
+        'source-layer': 'landcover',
+        filter: ['in', ['get', 'class'], ['literal', landcoverColors.map(([name]) => name)]],
+        paint: {
+          'fill-color': classColor(landcoverColors, '#e3ead6'),
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 3, 0.5, 8, 0.85],
+          'fill-antialias': false,
+        },
+      },
+      {
+        id: 'landuse',
+        type: 'fill',
+        source: 'basemap',
+        'source-layer': 'landuse',
+        minzoom: 8,
+        filter: ['in', ['get', 'class'], ['literal', landuseColors.map(([name]) => name)]],
+        paint: {
+          'fill-color': classColor(landuseColors, '#e4dfd4'),
+          'fill-opacity': ['interpolate', ['linear'], ['zoom'], 8, 0, 10, 0.8],
+        },
+      },
+      // Below the water fills, so seabed relief stays hidden under the ocean.
+      {
+        id: 'hillshade',
+        type: 'hillshade',
+        source: 'relief',
+        paint: {
+          'hillshade-exaggeration': ['interpolate', ['linear'], ['zoom'], 2, 0.2, 9, 0.4, 15, 0.3],
+          'hillshade-shadow-color': '#5d6a55',
+          'hillshade-highlight-color': '#fbfcf4',
+          'hillshade-accent-color': '#7f8a70',
+        },
+      },
+      {
+        id: 'parks',
+        type: 'line',
+        source: 'basemap',
+        'source-layer': 'park',
+        minzoom: 7,
+        paint: {
+          'line-color': '#8faa79',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 7, 0.6, 14, 1.6],
+          'line-opacity': 0.7,
+          'line-dasharray': [2, 2],
+        },
       },
       {
         id: 'water',
@@ -181,6 +277,44 @@ export function gameMapStyle(locale: string): StyleSpecification {
         },
         paint: { 'text-color': '#4f6250', 'text-halo-color': '#f1f3e6', 'text-halo-width': 1.8 },
       })),
+      {
+        id: 'water-names',
+        type: 'symbol',
+        source: 'basemap',
+        'source-layer': 'water_name',
+        minzoom: 3,
+        filter: ['==', ['geometry-type'], 'Point'],
+        layout: {
+          'text-field': placeName(locale),
+          'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 3, 11, 12, 13],
+          'text-letter-spacing': 0.1,
+          'text-max-width': 6,
+        },
+        paint: { 'text-color': '#4f7f86', 'text-halo-color': '#cfe4e5', 'text-halo-width': 1.2 },
+      },
+      {
+        id: 'peak-names',
+        type: 'symbol',
+        source: 'basemap',
+        'source-layer': 'mountain_peak',
+        minzoom: 8,
+        filter: [
+          'all',
+          ['in', ['get', 'class'], ['literal', ['peak', 'volcano']]],
+          ['has', 'name'],
+          // Rank orders peaks within a tile by height and fame; minor hills would crowd towns.
+          ['<=', ['get', 'rank'], 3],
+        ],
+        layout: {
+          'text-field': peakLabel(locale),
+          'text-font': ['Noto Sans Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 8, 11, 14, 13],
+          'text-padding': 8,
+          'symbol-sort-key': ['get', 'rank'],
+        },
+        paint: { 'text-color': '#5f5442', 'text-halo-color': '#f1f3e6', 'text-halo-width': 1.6 },
+      },
     ],
   };
 }

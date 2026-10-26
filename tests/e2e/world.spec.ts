@@ -25,6 +25,7 @@ const mapFixture = async (route: import('@playwright/test').Route) => {
 };
 test.beforeEach(async ({ page }) => {
   await page.route('https://tiles.openfreemap.org/**', mapFixture);
+  await page.route('https://elevation-tiles-prod.s3.amazonaws.com/**', (route) => route.abort());
 });
 
 const unique = () => `Explorer ${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
