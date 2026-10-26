@@ -48,7 +48,7 @@ Open that HTTPS address on a device connected to the same tailnet. The explicitl
 
 ## Documentation
 
-[Plan](docs/plan.md) · [Decisions](docs/decisions.md) · [Architecture](docs/architecture.md) · [Economy](docs/economy.md) · [Rules](docs/game-rules.md) · [Data](docs/data-model.md) · [Security](docs/security.md) · [Operations](docs/operations.md) · [Map attribution](docs/map-data.md)
+[Plan](docs/plan.md) · [Decisions](docs/decisions.md) · [Architecture](docs/architecture.md) · [Economy](docs/economy.md) · [Land ownership v2](docs/land-ownership.md) · [Rules](docs/game-rules.md) · [Data](docs/data-model.md) · [Security](docs/security.md) · [Operations](docs/operations.md) · [Map attribution](docs/map-data.md)
 
 Explore a simplified geographic basemap (OpenFreeMap/OpenStreetMap) in 2D or on a 3D globe. Territory cells are geographically anchored at approximately 250 m per cell, with location coordinates and an external map link. Resource terrain and boundaries are game data; territory is a seasonal game permission, unrelated to real property. See [map data](docs/map-data.md) for geographic mapping, tile service configuration and attribution.
 

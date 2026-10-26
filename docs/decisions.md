@@ -11,3 +11,4 @@
 9. Local development uses ports 5174/8788 to avoid other applications already running in this workspace environment. Browser tests use separate ports 5175/8789 and isolated D1 persistence.
 10. The Miniflare version is pinned to Wrangler's current runtime dependency. Tests use its supplied v4 configuration converter. Undici is overridden to the patched 7.30.1+ series; the installed dependency audit reports no known vulnerabilities.
 11. Account achievements are permanent records. Old-season open orders remain historical escrow; they cannot be traded or carried into the next season.
+12. Land ownership v2 (proposed, see land-ownership.md): permanent ownership; every plot, including the home plot, can be sold or force-bought at market price plus a premium (default 20%); first-come claims pay the market price. Rationale: exempting any plot would give early arrivals an outsized permanent advantage.
