@@ -1,5 +1,5 @@
 import { worldTileFromId } from '../shared/worldGrid';
-import { plotAt, plotRegionId, plotTerritoryId, regionFor } from '../shared/plots';
+import { plotAt, plotRegion, plotRegionId, plotTerritoryId, regionFor } from '../shared/plots';
 import { gridPoint } from '../shared/geography';
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import { build } from 'esbuild';
@@ -1024,6 +1024,59 @@ describe('global plot grid', () => {
       accept_rules: true,
     });
     expect(elsewhere.body.error.code).toBe('TERRITORY_UNAVAILABLE');
+  });
+  it('takes terrain from imported land cover and keeps water unowned', async () => {
+    // A set around Lake Victoria: one region with a row, its neighbour inside the set without one.
+    const lake = plotAt(32.9, -1.0);
+    const [rx, ry] = lake.region.split(':').slice(1).map(Number);
+    await db
+      .prepare(
+        "INSERT INTO land_cover_sets VALUES('test-cover',32.8,-1.1,33.0,-0.9,'https://example.com','CC BY 4.0',2021,unixepoch())",
+      )
+      .run();
+    // Row-major letters: water across the top row, then forest, farmland and built-up rows.
+    const classes = 'w'.repeat(8) + 't'.repeat(16) + 'c'.repeat(16) + 'u'.repeat(24);
+    await db
+      .prepare("INSERT INTO region_land_cover VALUES(?,'test-cover',?)")
+      .bind(lake.region, classes)
+      .run();
+    const preview = (await request(`/map/chunks?region=${lake.region}&cx=0&cy=0`)).body.tiles;
+    expect(preview.slice(0, 8).every((t: Territory) => t.terrain_type === 'water')).toBe(true);
+    expect(preview.slice(0, 8).some((t: Territory) => t.is_starter)).toBe(false);
+    expect(preview.map((t: Territory) => t.land_cover).join('')).toBe(classes);
+    expect(preview[8].terrain_type).toBe('forest');
+    expect(preview[24].terrain_type).toBe('meadow');
+    expect(preview[63].terrain_type).toBe('mountain');
+    // The covered neighbour without a row is open water: nothing to settle.
+    const south = plotRegionId(rx, ry + 1);
+    expect(plotRegion(south, 's1')!.latitude).toBeGreaterThan(-1.1);
+    const neighbour = (await request(`/map/chunks?region=${south}&cx=0&cy=0`)).body.tiles;
+    expect(neighbour.every((t: Territory) => t.terrain_type === 'water')).toBe(true);
+    const settle = (territory?: string) =>
+      request('/auth/dev', {
+        display_name: `Lake ${++counter}`,
+        region_id: lake.region,
+        ...(territory ? { territory_id: territory } : {}),
+        locale: 'en',
+        accept_rules: true,
+      });
+    const wet = `s1:${lake.region}:0:0`;
+    expect((await settle(wet)).body.error.code).toBe('TERRITORY_UNAVAILABLE');
+    const login = await settle();
+    expect(login.status, JSON.stringify(login.body)).toBe(200);
+    const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const home = (await request('/me/state', undefined, cookie)).body.territories[0];
+    expect(home.y).toBeGreaterThan(0);
+    expect(home.land_cover).toBe(classes[home.y * 8 + home.x]);
+    // Allocated rows keep the cover, and water stays unclaimable even from next door.
+    const shore = `s1:${lake.region}:${home.x}:0`;
+    expect(
+      await db
+        .prepare('SELECT terrain_type,land_cover FROM territories WHERE id=?')
+        .bind(shore)
+        .first(),
+    ).toEqual({ terrain_type: 'water', land_cover: 'w' });
+    expect((await claim({ cookie } as Actor, shore)).body.error.code).toBe('TERRITORY_UNAVAILABLE');
   });
   it('grows across region edges and allocates the next region on demand', async () => {
     const start = plotAt(139.69, 35.68);

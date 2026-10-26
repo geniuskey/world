@@ -38,6 +38,10 @@ Use `7` or `30` instead of `permanent` for a time-limited pilot. The default out
 
 Existing users choose a new starting region and receive a fresh seasonal grant. Old territory, ledgers, trades and account achievements remain. Expired offers remain frozen in the historical season's escrow and cannot transfer assets into a new season. The integration suite simulates this transition and checks preserved history and achievements.
 
+## Real land cover
+
+Land cover is reference data, imported like population rather than shipped as a migration. Generate and review the SQL locally (`npm run landcover:import`, or `node scripts/landcover.mjs` to only write `.wrangler/landcover/worldcover-2021-kor.sql`), then apply that file to the production database with `wrangler d1 execute world --remote --file …` after a backup. Re-importing replaces the set's rows and re-terrains only unowned plots.
+
 ## Release limits
 
 Live Google OAuth, Cloudflare D1 provisioning, the custom domain and regional release review are external launch tasks. Provider-mocked OAuth tests validate state/nonce/PKCE/signatures but do not verify a real Google console configuration. No production deployment or real payment was performed. Combat and real payments fail closed, even if someone changes their placeholder flags. Land trading is off in production (`LAND_TRADING_ENABLED`) until its parameters are tuned; the buyout premium, protection and cooldown live in the `land_rules` table and change with a reviewed `UPDATE land_rules SET …` rather than a deploy.

@@ -19,7 +19,15 @@ import {
 } from 'lucide-react';
 import { useWorld } from './state';
 import { api, mutate, post } from './api';
-import { Empty, Modal, PageHeading, PlotName, Resource, resourceIcon } from './components';
+import {
+  Empty,
+  Modal,
+  PageHeading,
+  PlotName,
+  Resource,
+  resourceIcon,
+  terrainLabel,
+} from './components';
 import {
   RESOURCE_KINDS,
   tradeTax,
@@ -196,7 +204,7 @@ export function AccountPage() {
                   {tile.terrain_type === 'forest' ? <Leaf size={22} /> : <Flag size={22} />}
                 </span>
                 <div>
-                  <strong>{t(tile.terrain_type)}</strong>
+                  <strong>{t(terrainLabel(tile))}</strong>
                   <small>
                     {t(tile.region_id as TextKey)} · {tile.x}, {tile.y}
                     {tile.structure_type ? ` · ${t(tile.structure_type as TextKey)}` : ''}
@@ -739,7 +747,7 @@ export function PlayerPage() {
                     <PlotName id={tile.id} />
                   </strong>
                   <small>
-                    {t(tile.terrain_type)}
+                    {t(terrainLabel(tile))}
                     {tile.structure_type ? ` · ${t(tile.structure_type as TextKey)}` : ''}
                   </small>
                 </div>

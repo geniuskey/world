@@ -6,6 +6,7 @@ import type { Map as EarthMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { Focus, Globe2, Map as MapIcon, Minus, Plus } from 'lucide-react';
 import { useWorld } from './state';
+import { terrainLabel } from './components';
 import { api } from './api';
 import { CHUNK_SIZE, type Region, type Territory } from '../shared/game';
 import { worldTilesForView, WORLD_INITIAL_TILES, type WorldTile } from '../shared/worldGrid';
@@ -645,7 +646,7 @@ export function Atlas({
                 data-testid={`tile-${tile.x}-${tile.y}`}
                 role="button"
                 tabIndex={0}
-                aria-label={`${t(tile.terrain_type)} ${tile.x}, ${tile.y}${mine ? ' ' + t('yours') : occupied ? ' ' + t('neighbors') : ''}`}
+                aria-label={`${t(terrainLabel(tile))} ${tile.x}, ${tile.y}${mine ? ' ' + t('yours') : occupied ? ' ' + t('neighbors') : ''}`}
                 fill={fill}
                 mask={
                   active ||

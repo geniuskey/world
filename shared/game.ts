@@ -48,6 +48,8 @@ export type Territory = {
   cx: number;
   cy: number;
   terrain_type: Terrain;
+  // Real land cover letter (shared/landCover.ts); null where terrain is generated.
+  land_cover?: string | null;
   owner_user_id: string | null;
   owner_name?: string | null;
   acquired_at: number | null;

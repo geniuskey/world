@@ -6,7 +6,7 @@ The interactive map uses MapLibre GL JS with a custom, muted vector basemap serv
 
 Plots are standard Web Mercator zoom-17 tiles, so a plot is the same `17/x/y` tile any slippy map uses for that place: about 306 m at the equator, 240 m in Korea, and narrower towards the poles. A region is the zoom-14 tile containing an 8×8 block of plots (`z14:x:y`). `shared/plots.ts` converts coordinates to plots and back; `shared/geography.ts` routes plot regions through it. Every point on Earth up to ±85.05° latitude has a plot, IDs come from coordinates, and rows are allocated only when a region is first settled or claimed. Clicking anywhere on the map opens that plot; coordinate search opens the plot at the coordinates; place search opens the plot at an area's interior label point.
 
-This is a geographic reference for game territory, not a surveyed or cadastral boundary. Resource terrain (meadow, forest, mountain, water) is still deterministic game data and does not describe real land cover; a game plot can sit on a real river. Neither the map nor the overlay confers real property rights. Version 1 regions (`earth2:*` world tiles with a 250 m grid around their centre) are archived; their plots keep their IDs, owners and history and still render with the version 1 grid. The world-tile overview remains a zoomed-out display only.
+This is a geographic reference for game territory, not a surveyed or cadastral boundary. Where [land cover](#land-cover) is imported (South Korea), game terrain follows the real ground and water plots cannot be owned; elsewhere terrain is still deterministic game data and a game plot can sit on a real river. Neither the map nor the overlay confers real property rights. Version 1 regions (`earth2:*` world tiles with a 250 m grid around their centre) are archived; their plots keep their IDs, owners and history and still render with the version 1 grid. The world-tile overview remains a zoomed-out display only.
 
 ## Exploration tools
 
@@ -17,6 +17,14 @@ Resource overlays use the actual game terrain and production multiplier; they do
 The public `/api/map/activity` endpoint returns at most 30 current-season settlement, claim and construction events, optionally scoped to a region. It exposes display names, event times and plot locations, omitting action payloads and filtering blocked accounts. The panel and markers refresh every 30 seconds while active and visible. Migration `0010_map_activity.sql` adds indexes for this view.
 
 Measurement mode consumes map clicks without selecting plots or navigating. Two points show great-circle distance and initial bearing, with a sampled path that crosses the date line continuously. A third click starts another measurement; Clear resets the points and Escape exits. This is an approximate distance on a spherical Earth, rather than a route along roads.
+
+## Land cover
+
+`npm run landcover:import` (`scripts/landcover.mjs`) classifies every plot in a box, South Korea by default (`--bbox 124.5,33.0,131.9,38.7`), by the majority of 4×4 samples from [ESA WorldCover 2021 v200](https://esa-worldcover.org/en/data-access) (CC BY 4.0). It reads overview level 3 (about 74 m per pixel, roughly 13 pixels per Korean plot) of the public Cloud-Optimized GeoTIFFs with HTTP range requests, caches it under `.wrangler/landcover`, writes SQL to `.wrangler/landcover/<set>.sql` and, with `--apply`, executes it on the local database only. A run for Korea takes about a minute and yields about 40,000 zoom-14 regions with land (4 MB of SQL). All-sea WorldCover tiles are not published and count as water. A majority tie never turns land into water. Narrow streams below about 150 m wide disappear at this resolution; `--level 2` doubles it.
+
+Data model (migration 0016): `land_cover_sets` records each imported box; `region_land_cover` stores one letter per plot for each region with any land. A region whose centre is inside a set but has no row is open water. `territories.land_cover` keeps the letter on allocated plots. Mapping (`shared/landCover.ts`): water → water (never ownable, never a starting site); tree cover → forest (wood); cropland, grassland and wetland → meadow (food); built-up, bare, shrub, snow and moss → mountain (stone and iron). The inspector names the real cover (for example "Built-up") with the source, and the game resource follows from it. Re-importing updates unowned allocated plots; owned plots keep their terrain so nobody loses land, but record the real cover.
+
+Attribution: © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium.
 
 ## Place names
 

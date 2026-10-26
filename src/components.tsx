@@ -30,6 +30,9 @@ import { placeName } from '../shared/places';
 import { usePlace } from './places';
 import { isPermanent, type ResourceKind } from '../shared/game';
 
+// Real land cover names the ground where it is imported; otherwise the game terrain does.
+export const terrainLabel = (tile: { terrain_type: string; land_cover?: string | null }) =>
+  (tile.land_cover ? `cover_${tile.land_cover}` : tile.terrain_type) as TextKey;
 export const resourceIcon = { food: Wheat, wood: TreePine, iron: Mountain };
 export function Resource({
   kind,

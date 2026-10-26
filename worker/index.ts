@@ -15,7 +15,13 @@ import {
 import { Db } from './db';
 import { withPopulation } from './population';
 import { landHistory, landNotices, landTrades, playerProfile, shareMeta } from './land';
-import { prepareSettlement, regionExists, worldTiles, virtualTerritories } from './world';
+import {
+  prepareSettlement,
+  regionCover,
+  regionExists,
+  worldTiles,
+  virtualTerritories,
+} from './world';
 import { isPlotRegion, parseTerritoryId, plotRegion } from '../shared/plots';
 import { WORLD_INITIAL_TILES, WORLD_SPLIT_PLAYERS, WORLD_MAX_LEVEL } from '../shared/worldGrid';
 import { ApiError, type AppEnv, type Ctx, type Env } from './types';
@@ -234,11 +240,17 @@ app.get('/api/map/chunks', (c) =>
     if (!version) {
       if (!(await regionExists(db, season.id, region)) || cx !== 0 || cy !== 0)
         throw new ApiError('CHUNK_NOT_FOUND', 404);
-      return c.json({ region, cx, cy, version: 0, tiles: virtualTerritories(season.id, region) });
+      return c.json({
+        region,
+        cx,
+        cy,
+        version: 0,
+        tiles: virtualTerritories(season.id, region, await regionCover(db, region)),
+      });
     }
     const etag = `"${season.id}-${region}-${cx}-${cy}-${version.version}"`;
     const tiles = await db.all(
-      `SELECT t.id,t.region_id,t.season_id,t.x,t.y,t.gx,t.gy,t.cx,t.cy,t.terrain_type,t.owner_user_id,
+      `SELECT t.id,t.region_id,t.season_id,t.x,t.y,t.gx,t.gy,t.cx,t.cy,t.terrain_type,t.land_cover,t.owner_user_id,
       CASE WHEN u.status='active' THEN p.display_name END AS owner_name,t.acquired_at,t.version,t.structure_type,t.is_starter
       FROM territories t LEFT JOIN users u ON u.id=t.owner_user_id LEFT JOIN profiles p ON p.user_id=t.owner_user_id
       WHERE t.season_id=? AND t.region_id=? AND t.cx=? AND t.cy=? ORDER BY t.y,t.x`,
@@ -295,7 +307,8 @@ app.get('/api/territories/:id', async (c) => {
     const season = await currentSeason(c.get('db'));
     const match = parseTerritoryId(c.req.param('id'));
     if (match?.season === season.id && (await regionExists(c.get('db'), season.id, match.region))) {
-      const virtual = virtualTerritories(season.id, match.region).find(
+      const cover = await regionCover(c.get('db'), match.region);
+      const virtual = virtualTerritories(season.id, match.region, cover).find(
         (t) => t.id === c.req.param('id'),
       );
       if (virtual) return c.json({ territory: await withPopulation(c.get('db'), virtual) });

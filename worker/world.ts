@@ -11,6 +11,7 @@ import {
 } from '../shared/worldGrid';
 import { ApiError } from './types';
 import { isPlotRegion, plotRegion, plotRegionFromId, REGION_PLOTS } from '../shared/plots';
+import { isLandCover, LAND_COVER } from '../shared/landCover';
 
 export async function worldTiles(
   db: Db,
@@ -73,14 +74,37 @@ export async function worldTiles(
     total_tiles: WORLD_INITIAL_TILES + 3 * (splitCount?.n ?? 0),
   };
 }
-export function virtualTerritories(season: string, region: string): Territory[] {
+// A plot region's imported land cover: 64 letters, all water inside a set without a row, or
+// null outside every set (terrain there is still generated).
+export async function regionCover(db: Db, region: string) {
+  const plots = plotRegionFromId(region);
+  if (!plots) return null;
+  const { longitude, latitude } = plotRegion(region, '')!;
+  const row = await db.first<{ classes: string | null }>(
+    `SELECT c.classes FROM land_cover_sets s LEFT JOIN region_land_cover c ON c.region_id=? AND c.set_id=s.id
+    WHERE ? BETWEEN s.west AND s.east AND ? BETWEEN s.south AND s.north ORDER BY s.imported_at DESC LIMIT 1`,
+    region,
+    longitude,
+    latitude,
+  );
+  return row ? (row.classes ?? 'w'.repeat(REGION_PLOTS ** 2)) : null;
+}
+export function virtualTerritories(
+  season: string,
+  region: string,
+  cover: string | null = null,
+): Territory[] {
   const plots = plotRegionFromId(region);
   const bx = plots ? plots.x * REGION_PLOTS : 0,
     by = plots ? plots.y * REGION_PLOTS : 0;
   return Array.from({ length: WORLD_REGION_SIZE ** 2 }, (_, i) => {
     const x = i % WORLD_REGION_SIZE,
       y = Math.floor(i / WORLD_REGION_SIZE);
-    const terrain = ['meadow', 'forest', 'mountain'] as const;
+    const generated = ['meadow', 'forest', 'mountain'] as const;
+    const real = cover?.[i];
+    const terrain = isLandCover(real)
+      ? LAND_COVER[real].terrain
+      : generated[((bx + x) * 17 + (by + y) * 31) % 3];
     return {
       id: `${season}:${region}:${x}:${y}`,
       region_id: region,
@@ -91,12 +115,13 @@ export function virtualTerritories(season: string, region: string): Territory[] 
       gy: plots ? by + y : null,
       cx: 0,
       cy: 0,
-      terrain_type: terrain[((bx + x) * 17 + (by + y) * 31) % 3],
+      terrain_type: terrain,
+      land_cover: isLandCover(real) ? real : null,
       owner_user_id: null,
       acquired_at: null,
       version: 1,
       structure_type: null,
-      is_starter: (bx + x) % 2 === 0 && (by + y) % 2 === 0 ? 1 : 0,
+      is_starter: terrain !== 'water' && (bx + x) % 2 === 0 && (by + y) % 2 === 0 ? 1 : 0,
     };
   });
 }
@@ -131,6 +156,7 @@ export async function prepareSettlement(db: Db, season: string, requested: strin
     )
   )
     return requested;
+  const cover = await regionCover(db, requested);
   await db.batch([
     db.statement(
       `INSERT OR IGNORE INTO regions(id,season_id,name,subtitle,longitude,latitude,width,height,land_count)
@@ -148,11 +174,11 @@ export async function prepareSettlement(db: Db, season: string, requested: strin
       ],
     ),
     db.statement('INSERT OR IGNORE INTO chunk_versions VALUES(?,?,0,0,1)', [season, requested]),
-    ...virtualTerritories(season, requested).map((t) =>
+    ...virtualTerritories(season, requested, cover).map((t) =>
       db.statement(
         `INSERT OR IGNORE INTO territories
-        (id,region_id,season_id,x,y,gx,gy,cx,cy,terrain_type,is_starter) VALUES(?,?,?,?,?,?,?,0,0,?,?)`,
-        [t.id, requested, season, t.x, t.y, t.gx, t.gy, t.terrain_type, t.is_starter],
+        (id,region_id,season_id,x,y,gx,gy,cx,cy,terrain_type,land_cover,is_starter) VALUES(?,?,?,?,?,?,?,0,0,?,?,?)`,
+        [t.id, requested, season, t.x, t.y, t.gx, t.gy, t.terrain_type, t.land_cover, t.is_starter],
       ),
     ),
   ]);

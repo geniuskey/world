@@ -21,7 +21,8 @@
     "deploy": "npm run build && wrangler deploy --env=\"\"",
     "format": "prettier --write src worker shared tests scripts *.ts *.json *.jsonc docs README.md .github",
     "population:import": "node scripts/population.mjs",
-    "places:build": "node scripts/places.mjs --country KOR"
+    "places:build": "node scripts/places.mjs --country KOR",
+    "landcover:import": "node scripts/landcover.mjs --apply"
   },
   "dependencies": {
     "hono": "^4.10.0",

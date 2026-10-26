@@ -24,7 +24,7 @@ import { useWorld } from './state';
 import { usePlace } from './places';
 import { placeName } from '../shared/places';
 import { api, mutate, post } from './api';
-import { Empty, Modal, Resource } from './components';
+import { Empty, Modal, Resource, terrainLabel } from './components';
 import { worldTileFromId, WORLD_INITIAL_TILES } from '../shared/worldGrid';
 import { parseTerritoryId, plotAt, plotTerritoryId, regionFor } from '../shared/plots';
 import {
@@ -36,6 +36,7 @@ import {
   type Territory,
 } from '../shared/game';
 import type { TextKey } from './i18n';
+import { LAND_COVER_SOURCE } from '../shared/landCover';
 
 export function MapPage() {
   const { regionId, territoryId } = useParams(),
@@ -378,9 +379,9 @@ export function MapPage() {
               </div>
               <div className="detail-content">
                 <span className="eyebrow">
-                  {t('tile')} · {place ? t(terrain!) : region && t(region.id as TextKey)}
+                  {t('tile')} · {place ? t(terrainLabel(tile)) : region && t(region.id as TextKey)}
                 </span>
-                <h2>{place ? placeName(place.place, locale, true) : t(terrain!)}</h2>
+                <h2>{place ? placeName(place.place, locale, true) : t(terrainLabel(tile))}</h2>
                 {region && (
                   <div className="territory-location">
                     <strong>
@@ -388,6 +389,24 @@ export function MapPage() {
                     </strong>
                     <span>{coordinates(gridPoint(region, tile.x + 0.5, tile.y + 0.5))}</span>
                     <small>{t('geographicCell')}</small>
+                    <small>
+                      {tile.land_cover ? (
+                        <>
+                          {t('landCover')}: {t(`cover_${tile.land_cover}` as TextKey)} ·{' '}
+                          <a
+                            className="text-link"
+                            href={LAND_COVER_SOURCE.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={LAND_COVER_SOURCE.attribution}
+                          >
+                            {LAND_COVER_SOURCE.name} ({LAND_COVER_SOURCE.license}) ↗
+                          </a>
+                        </>
+                      ) : (
+                        t('generatedTerrain')
+                      )}
+                    </small>
                     {place && (
                       <small>
                         {t('placeSource', { year: place.index.year })} ·{' '}
