@@ -51,6 +51,8 @@ export type Territory = {
   owner_user_id: string | null;
   owner_name?: string | null;
   acquired_at: number | null;
+  // Gold the owner paid (claim, purchase and facilities): the transfer-tax cost basis.
+  acquired_price?: number;
   version: number;
   structure_type: string | null;
   is_starter: number;
@@ -58,6 +60,20 @@ export type Territory = {
   population_year?: number | null;
   population_source?: string | null;
   price_gold?: number;
+  // Owned plots only (land_quotes view): current market and forced-buyout prices.
+  market_price_gold?: number;
+  buyout_price_gold?: number;
+  protected_until?: number;
+  listing?: { id: string; price_gold: number } | null;
+};
+export type LandListing = {
+  id: string;
+  territory_id: string;
+  region_id: string;
+  seller_user_id: string;
+  seller_name: string;
+  price_gold: number;
+  created_at: number;
 };
 export type Player = {
   id: string;
@@ -113,6 +129,7 @@ export type WorldConfig = {
     auto_split: boolean;
   };
   flags: { market: boolean; combat: boolean; payments: boolean; land_trading: boolean };
+  land?: { buyout_premium_pct: number; protection_seconds: number; cooldown_seconds: number };
   auth: { google: boolean; dev: boolean };
 };
 export type CommandResult = {
@@ -136,3 +153,8 @@ export const PRICE_TURNS = 10;
 export const plotIncome = (population?: number | null) => 1 + Math.floor((population ?? 0) / 100);
 export const plotPrice = (population?: number | null) => PRICE_TURNS * plotIncome(population);
 export const tradeTax = (total: number) => Math.ceil((total * 3) / 100);
+// Land transfer tax, burned: 10% of the gain up to the cost basis, 30% of the gain above it.
+// Mirrored by action_land_buy in migration 0014.
+export const landTax = (price: number, basis: number) =>
+  Math.ceil((Math.min(Math.max(0, price - basis), basis) * 10) / 100) +
+  Math.ceil((Math.max(0, price - 2 * basis) * 30) / 100);

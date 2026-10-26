@@ -40,4 +40,4 @@ Existing users choose a new starting region and receive a fresh seasonal grant. 
 
 ## Release limits
 
-Live Google OAuth, Cloudflare D1 provisioning, the custom domain and regional release review are external launch tasks. Provider-mocked OAuth tests validate state/nonce/PKCE/signatures but do not verify a real Google console configuration. No production deployment or real payment was performed. Combat, land transfers and real payments fail closed, even if someone changes their placeholder flags.
+Live Google OAuth, Cloudflare D1 provisioning, the custom domain and regional release review are external launch tasks. Provider-mocked OAuth tests validate state/nonce/PKCE/signatures but do not verify a real Google console configuration. No production deployment or real payment was performed. Combat and real payments fail closed, even if someone changes their placeholder flags. Land trading is off in production (`LAND_TRADING_ENABLED`) until its parameters are tuned; the buyout premium, protection and cooldown live in the `land_rules` table and change with a reviewed `UPDATE land_rules SET …` rather than a deploy.

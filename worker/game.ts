@@ -158,6 +158,29 @@ export async function playerState(db: Db, user: Player, now: number): Promise<Pl
     next_energy_at: state.energy_value < 4 ? state.energy_updated_at + TURN_SECONDS : null,
   };
 }
+// Market and buyout prices, protection and any open listing for an owned plot.
+export async function landQuote(db: Db, tile: Territory) {
+  if (!tile.owner_user_id) return {};
+  const quote = await db.first<{
+    market_price_gold: number;
+    buyout_price_gold: number;
+    protected_until: number;
+    listing_id: string | null;
+    listing_price_gold: number | null;
+  }>(
+    `SELECT q.market_price AS market_price_gold,q.buyout_price AS buyout_price_gold,q.protected_until,
+    l.id AS listing_id,l.price_gold AS listing_price_gold FROM land_quotes q
+    LEFT JOIN land_listings l ON l.territory_id=q.territory_id AND l.status='open' AND l.seller_user_id=q.owner_user_id
+    WHERE q.territory_id=?`,
+    tile.id,
+  );
+  if (!quote) return {};
+  const { listing_id, listing_price_gold, ...prices } = quote;
+  return {
+    ...prices,
+    listing: listing_id ? { id: listing_id, price_gold: listing_price_gold! } : null,
+  };
+}
 export async function snapshot(db: Db, season: string, now: number, force = false) {
   const prior = await db.first<{ generated_at: number; rows_json: string }>(
     'SELECT * FROM leaderboard_snapshots WHERE season_id=?',

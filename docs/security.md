@@ -10,4 +10,4 @@ CSP restricts scripts/connections to self. Headers deny framing/sniffing/sensiti
 
 Before launch: configure OAuth redirects/TLS, verify local login disabled, review logging, implement operational deletion/export/retention/incident procedures, provision backups, and use Cloudflare edge challenges if needed. Promote admins explicitly in D1. Blocking accounts prevents authentication and mutations.
 
-Combat, land transfer and real payments fail closed even if their flags are changed before implementation. No webhook can grant Gems. Payments require signature verification, unique provider events, refunds/chargebacks and nontransferable entitlements plus launch review.
+Combat and real payments fail closed even if their flags are changed before implementation. Land trading is implemented in database triggers (forced buyouts are bounded by price, protection and a per-pair cooldown) and stays off in production via `LAND_TRADING_ENABLED` until launch tuning. No webhook can grant Gems. Payments require signature verification, unique provider events, refunds/chargebacks and nontransferable entitlements plus launch review.

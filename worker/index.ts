@@ -7,6 +7,7 @@ import {
   claimSchema,
   sellSchema,
   keySchema,
+  landPriceSchema,
   profileSchema,
   reportSchema,
   id,
@@ -18,7 +19,7 @@ import { isPlotRegion, parseTerritoryId, plotRegion } from '../shared/plots';
 import { WORLD_INITIAL_TILES, WORLD_SPLIT_PLAYERS, WORLD_MAX_LEVEL } from '../shared/worldGrid';
 import { ApiError, type AppEnv, type Ctx, type Env } from './types';
 import { authenticate, devLogin, startOAuth, finishOAuth, logout, localAuth, sha256 } from './auth';
-import { command, currentSeason, join, playerState, snapshot } from './game';
+import { command, currentSeason, join, landQuote, playerState, snapshot } from './game';
 
 const app = new Hono<AppEnv>();
 const security = {
@@ -124,7 +125,7 @@ app.use('/api/*', async (c, next) => {
   const path = c.req.path;
   const needsAuth =
     /^\/api\/(me|actions|structures|reports|admin|events|join)(\/|$)/.test(path) ||
-    (path.startsWith('/api/market') && c.req.method !== 'GET');
+    (/^\/api\/(market|land)\//.test(path) && c.req.method !== 'GET');
   if (needsAuth) {
     const user = await authenticate(c);
     await limit(c, `user:${user.id}`, c.req.method === 'GET' ? 120 : 30);
@@ -154,8 +155,11 @@ app.get('/api/world/config', (c) =>
         market: c.env.MARKET_ENABLED === 'true',
         combat: false,
         payments: false,
-        land_trading: false,
+        land_trading: c.env.LAND_TRADING_ENABLED === 'true',
       },
+      land: await c
+        .get('db')
+        .first('SELECT buyout_premium_pct,protection_seconds,cooldown_seconds FROM land_rules'),
       auth: {
         dev: localAuth(c),
         google: Boolean(c.env.GOOGLE_CLIENT_ID && c.env.GOOGLE_CLIENT_SECRET),
@@ -292,9 +296,8 @@ app.get('/api/territories/:id', async (c) => {
     }
     throw new ApiError('NOT_FOUND', 404);
   }
-  return c.json({
-    territory: await withPopulation(c.get('db'), tile as import('../shared/game').Territory),
-  });
+  const territory = await withPopulation(c.get('db'), tile as import('../shared/game').Territory);
+  return c.json({ territory: { ...territory, ...(await landQuote(c.get('db'), territory)) } });
 });
 app.get('/api/leaderboards', (c) =>
   publicCache(c, 3600, async () => {
@@ -459,6 +462,70 @@ for (const op of ['buy', 'cancel'] as const)
       ),
     );
   });
+const landTrading = (c: Ctx) => {
+  if (c.env.LAND_TRADING_ENABLED !== 'true') throw new ApiError('FEATURE_DISABLED', 404);
+};
+app.get('/api/land/listings', async (c) => {
+  landTrading(c);
+  const db = c.get('db'),
+    season = await currentSeason(db);
+  const cursor = z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(100000)
+    .parse(c.req.query('offset') || 0);
+  const listings = await db.all(
+    `SELECT l.id,l.territory_id,t.region_id,l.seller_user_id,p.display_name AS seller_name,l.price_gold,l.created_at
+    FROM land_listings l JOIN territories t ON t.id=l.territory_id JOIN profiles p ON p.user_id=l.seller_user_id JOIN users u ON u.id=l.seller_user_id
+    WHERE l.season_id=? AND l.status='open' AND u.status='active' ORDER BY l.created_at DESC,l.id LIMIT 51 OFFSET ?`,
+    season.id,
+    cursor,
+  );
+  return c.json({
+    listings: listings.slice(0, 50),
+    next_offset: listings.length > 50 ? cursor + 50 : null,
+  });
+});
+for (const op of ['list', 'unlist', 'buy'] as const)
+  app.post(`/api/land/:id/${op}`, async (c) => {
+    landTrading(c);
+    const body = await jsonBody(c);
+    const { idempotency_key, ...price } =
+      op === 'unlist' ? keySchema.parse(body) : landPriceSchema.parse(body);
+    const db = c.get('db'),
+      season = await currentSeason(db),
+      territory_id = id.parse(c.req.param('id'));
+    if (op === 'buy') {
+      // Pay the outgoing owner's production up to now before the plot changes hands.
+      const owner = await db.first<{ id: string }>(
+        "SELECT u.id FROM territories t JOIN users u ON u.id=t.owner_user_id WHERE t.id=? AND u.status='active' AND u.id<>?",
+        territory_id,
+        c.get('user').id,
+      );
+      if (owner)
+        await command(
+          db,
+          owner.id,
+          season.id,
+          'settle',
+          {},
+          `settle:land:${crypto.randomUUID()}`,
+          c.get('now'),
+        );
+    }
+    return c.json(
+      await command(
+        db,
+        c.get('user').id,
+        season.id,
+        op === 'list' ? 'sell' : op === 'unlist' ? 'cancel' : 'buy',
+        { territory_id, ...price },
+        idempotency_key,
+        c.get('now'),
+      ),
+    );
+  });
 app.post('/api/events', async (c) => {
   const { event } = z
     .object({ event: z.enum(['visit', 'map', 'territory']) })
@@ -547,12 +614,7 @@ app.get('/api/store/catalog', (c) =>
     cosmetics: ['fern', 'ocean', 'sunset'],
   }),
 );
-for (const path of [
-  '/api/payments/checkout',
-  '/api/payments/webhook',
-  '/api/actions/attack',
-  '/api/land/trade',
-])
+for (const path of ['/api/payments/checkout', '/api/payments/webhook', '/api/actions/attack'])
   app.all(path, () => {
     throw new ApiError('FEATURE_DISABLED', 404);
   });
@@ -581,6 +643,13 @@ app.onError((error, c) => {
     'SELF_TRADE',
     'ORDER_LIMIT',
     'TRADE_COOLDOWN',
+    'NOT_OWNER',
+    'ALREADY_LISTED',
+    'ABOVE_BUYOUT_PRICE',
+    'LISTING_UNAVAILABLE',
+    'PRICE_CHANGED',
+    'PROTECTED',
+    'BUYOUT_COOLDOWN',
   ];
   const code = codes.find((code) => error.message.includes(code));
   if (code) return c.json({ error: { code } }, 409);

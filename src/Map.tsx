@@ -26,7 +26,7 @@ import { api, mutate, post } from './api';
 import { Empty, Modal, Resource } from './components';
 import { worldTileFromId, WORLD_INITIAL_TILES } from '../shared/worldGrid';
 import { parseTerritoryId, plotAt, plotTerritoryId, regionFor } from '../shared/plots';
-import { plotPrice, terrainResource, type Region, type Territory } from '../shared/game';
+import { landTax, plotPrice, terrainResource, type Region, type Territory } from '../shared/game';
 import type { TextKey } from './i18n';
 
 export function MapPage() {
@@ -473,20 +473,25 @@ export function MapPage() {
                 {terrain === 'water' ? (
                   <p>{t('waterHint')}</p>
                 ) : mine ? (
-                  !tile.structure_type && (
-                    <>
-                      <p>{t('buildHint')}</p>
-                      <button
-                        className="button primary full"
-                        disabled={busy || Date.now() / 1000 > config!.season.ends_at}
-                        onClick={() => void act('build')}
-                      >
-                        <Sprout size={17} />
-                        {t('build')}
-                      </button>
-                      <small className="cost-note">{t('buildCost')}</small>
-                    </>
-                  )
+                  <>
+                    {!tile.structure_type && (
+                      <>
+                        <p>{t('buildHint')}</p>
+                        <button
+                          className="button primary full"
+                          disabled={busy || Date.now() / 1000 > config!.season.ends_at}
+                          onClick={() => void act('build')}
+                        >
+                          <Sprout size={17} />
+                          {t('build')}
+                        </button>
+                        <small className="cost-note">{t('buildCost')}</small>
+                      </>
+                    )}
+                    {config?.flags.land_trading && (
+                      <LandTrade tile={tile} mine busy={busy} setBusy={setBusy} />
+                    )}
+                  </>
                 ) : !tile.owner_user_id ? (
                   <>
                     <button
@@ -516,6 +521,8 @@ export function MapPage() {
                       <p className="fine-print">{t('noGold', { gold: price })}</p>
                     )}
                   </>
+                ) : config?.flags.land_trading ? (
+                  <LandTrade tile={tile} mine={false} busy={busy} setBusy={setBusy} />
                 ) : (
                   <p>{t('ownedHint')}</p>
                 )}
@@ -594,4 +601,134 @@ export function MapPage() {
 }
 function ArrowUpRightIcon() {
   return <ArrowDownLeft size={15} style={{ transform: 'rotate(180deg)' }} />;
+}
+
+// Owned plots: market and buyout prices, listing for the owner, purchase for everyone else.
+function LandTrade({
+  tile,
+  mine,
+  busy,
+  setBusy,
+}: {
+  tile: Territory;
+  mine: boolean;
+  busy: boolean;
+  setBusy: (busy: boolean) => void;
+}) {
+  const { t, locale, config, user, state, setAuthOpen, refresh, notify, fail } = useWorld();
+  const [ask, setAsk] = useState(tile.market_price_gold ?? 1);
+  useEffect(() => setAsk(tile.market_price_gold ?? 1), [tile.id, tile.market_price_gold]);
+  if (tile.buyout_price_gold == null) return null;
+  const now = Date.now() / 1000,
+    listing = tile.listing,
+    buyout = tile.buyout_price_gold,
+    price = listing?.price_gold ?? buyout,
+    protectedUntil = !listing && (tile.protected_until ?? 0) > now ? tile.protected_until! : null,
+    basis = mine ? (state?.territories.find((x) => x.id === tile.id)?.acquired_price ?? 0) : 0;
+  const run = async (
+    op: 'list' | 'unlist' | 'buy',
+    body: Record<string, unknown>,
+    done: TextKey,
+  ) => {
+    if (!user || !state) {
+      setAuthOpen(true);
+      return;
+    }
+    setBusy(true);
+    try {
+      await mutate(`/land/${tile.id}/${op}`, body);
+      await refresh();
+      notify(done);
+    } catch (e) {
+      fail(e);
+      await refresh().catch(() => {});
+    } finally {
+      setBusy(false);
+    }
+  };
+  const date = (seconds: number) =>
+    new Date(seconds * 1000).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+    });
+  return (
+    <div className="yield-box land-box">
+      <dl>
+        <dt>{t('landMarket')}</dt>
+        <dd>
+          <Resource kind="gold" amount={tile.market_price_gold ?? 0} />
+        </dd>
+        <dt>{t('landBuyout')}</dt>
+        <dd>
+          <Resource kind="gold" amount={buyout} />
+        </dd>
+      </dl>
+      {listing && <strong>{t('landListedAt', { gold: listing.price_gold })}</strong>}
+      {protectedUntil && <small>{t('landProtected', { date: date(protectedUntil) })}</small>}
+      {mine ? (
+        listing ? (
+          <button
+            className="button full"
+            disabled={busy}
+            onClick={() => void run('unlist', {}, 'landUnlisted')}
+          >
+            {t('landUnlist')}
+          </button>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run('list', { price_gold: ask }, 'landListed');
+            }}
+          >
+            <label>
+              {t('landAsk')}
+              <input
+                type="number"
+                min={1}
+                max={buyout}
+                value={ask}
+                onChange={(e) => setAsk(Number(e.target.value))}
+                required
+              />
+            </label>
+            <small>
+              {t('landNet', { gold: ask - landTax(ask, basis), tax: landTax(ask, basis) })}
+            </small>
+            <button className="button full" disabled={busy}>
+              {t('landList')}
+            </button>
+          </form>
+        )
+      ) : (
+        <>
+          <button
+            className="button primary full"
+            disabled={
+              busy ||
+              Boolean(protectedUntil) ||
+              Boolean(state && (state.energy_value < 1 || state.gold_balance < price)) ||
+              now > config!.season.ends_at
+            }
+            onClick={() => void run('buy', { price_gold: price }, 'landBought')}
+          >
+            <Flag size={17} />
+            {t(listing ? 'landBuyListing' : 'landForceBuy', { gold: price })}
+          </button>
+          <small className="cost-note">
+            <Zap size={12} />
+            {t('claimCost', { gold: price })}
+          </small>
+          {state && state.energy_value < 1 && <p className="fine-print">{t('noEnergy')}</p>}
+          {state && state.gold_balance < price && (
+            <p className="fine-print">{t('noGoldBuy', { gold: price })}</p>
+          )}
+          <p className="fine-print">
+            {t('landForceHint', { pct: config?.land?.buyout_premium_pct ?? 20 })}
+          </p>
+        </>
+      )}
+    </div>
+  );
 }

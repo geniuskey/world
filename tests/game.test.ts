@@ -10,6 +10,7 @@ import {
   PERMANENT_ENDS_AT,
   recoverEnergy,
   tradeTax,
+  landTax,
   TURN_SECONDS,
   type PlayerState,
   type Territory,
@@ -138,7 +139,7 @@ beforeAll(async () => {
             GOOGLE_CLIENT_ID: '',
             COMBAT_ENABLED: 'false',
             PAYMENTS_ENABLED: 'false',
-            LAND_TRADING_ENABLED: 'false',
+            LAND_TRADING_ENABLED: 'true',
           },
         },
       ],
@@ -629,6 +630,173 @@ describe('market escrow and ledger conservation', () => {
     await db.prepare("UPDATE users SET status='blocked' WHERE id=?").bind(a.id).run();
     expect((await buy(b, order)).body.error.code).toBe('ORDER_UNAVAILABLE');
     expect((await state(b)).gold_balance).toBe(100);
+  });
+});
+
+describe('land trading', () => {
+  const lakes = 'earth2:300:700:0:0:0:0:0:0';
+  // Joins elsewhere so these extra accounts leave the default fixture's starter plots free.
+  const settler = () => actor(undefined, 'earth2:700:500:0:0:0:0:0:0');
+  const plot = (x: number, y: number) => `s1:${lakes}:${x}:${y}`;
+  // Places the actor on the first free run of `n` adjacent land plots; returns their IDs.
+  async function homestead(a: Actor, n = 2) {
+    const rows = (
+      await db
+        .prepare(
+          "SELECT x,y FROM territories WHERE region_id=? AND owner_user_id IS NULL AND terrain_type<>'water' AND y<16 ORDER BY y,x",
+        )
+        .bind(lakes)
+        .all<{ x: number; y: number }>()
+    ).results;
+    const start = rows.findIndex((r, i) =>
+      rows.slice(i, i + n).every((s, j) => s.y === r.y && s.x === r.x + j),
+    );
+    expect(start).toBeGreaterThanOrEqual(0);
+    const { x, y } = rows[start];
+    await place(a, x, y);
+    return Array.from({ length: n }, (_, j) => plot(x + j, y));
+  }
+  const land = (
+    a: Actor,
+    tile: string,
+    op: 'list' | 'unlist' | 'buy',
+    price?: number,
+    key = uuid(),
+  ) =>
+    request(
+      `/land/${tile}/${op}`,
+      price === undefined ? { idempotency_key: key } : { price_gold: price, idempotency_key: key },
+      a.cookie,
+    );
+  const owner = async (tile: string) =>
+    (await db
+      .prepare('SELECT owner_user_id,acquired_price FROM territories WHERE id=?')
+      .bind(tile)
+      .first<{ owner_user_id: string; acquired_price: number }>())!;
+  const unprotect = (a: Actor) =>
+    db
+      .prepare('UPDATE territories SET acquired_at=acquired_at-8*86400 WHERE owner_user_id=?')
+      .bind(a.id)
+      .run();
+
+  it('mirrors the trigger transfer tax in the client helper', () => {
+    expect([
+      landTax(11, 10),
+      landTax(36, 30),
+      landTax(12, 0),
+      landTax(30, 10),
+      landTax(8, 10),
+    ]).toEqual([1, 1, 4, 4, 0]);
+  });
+  it('fills a listing at the asking price, taxes the gain and moves the plot', async () => {
+    const [a, b, c] = await Promise.all([settler(), settler(), settler()]);
+    const [, tile] = await homestead(a);
+    expect((await claim(a, tile)).status).toBe(200);
+    expect((await owner(tile)).acquired_price).toBe(10);
+    expect((await land(c, tile, 'list', 11)).body.error.code).toBe('NOT_OWNER');
+    // Market price 10, buyout 12: nobody may ask more than a buyer could force.
+    expect((await land(a, tile, 'list', 13)).body.error.code).toBe('ABOVE_BUYOUT_PRICE');
+    const listed = await land(a, tile, 'list', 11);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    const quote = (await request(`/territories/${tile}`)).body.territory;
+    expect(quote).toMatchObject({
+      market_price_gold: 10,
+      buyout_price_gold: 12,
+      listing: { id: listed.body.result.listing_id, price_gold: 11 },
+    });
+    expect(quote.protected_until).toBeGreaterThan(Date.now() / 1000);
+    const listings = (await request('/land/listings')).body.listings;
+    expect(listings.some((l: { territory_id: string }) => l.territory_id === tile)).toBe(true);
+    // A listing is not protected, and the buyer's cap must cover the asking price.
+    expect((await land(b, tile, 'buy', 10)).body.error.code).toBe('PRICE_CHANGED');
+    const key = uuid();
+    const bought = await land(b, tile, 'buy', 12, key);
+    expect(bought.status, JSON.stringify(bought.body)).toBe(200);
+    expect(bought.body.result).toMatchObject({ kind: 'listing', price_gold: 11, tax_gold: 1 });
+    expect((await land(b, tile, 'buy', 12, key)).body.replayed).toBe(true);
+    expect(await owner(tile)).toEqual({ owner_user_id: b.id, acquired_price: 11 });
+    const [sa, sb] = await Promise.all([state(a), state(b)]);
+    expect(sa.gold_balance).toBe(100);
+    expect(sa.territory_count).toBe(1);
+    expect(sb.gold_balance).toBe(89);
+    expect(sb.territory_count).toBe(2);
+    expect(sb.energy_value).toBe(3);
+    // 10 Gold burned by the claim and 1 by the transfer tax.
+    expect(sa.gold_balance + sb.gold_balance).toBe(189);
+    expect((await request(`/territories/${tile}`)).body.territory.listing).toBeNull();
+    await Promise.all([ledgerMatches(a), ledgerMatches(b)]);
+  });
+  it('lets only the seller withdraw a listing', async () => {
+    const [a, b] = await Promise.all([settler(), settler()]);
+    const [home] = await homestead(a, 1);
+    expect((await land(a, home, 'list', 5)).status).toBe(200);
+    expect((await land(a, home, 'list', 6)).body.error.code).toBe('TRADE_COOLDOWN');
+    expect((await land(b, home, 'unlist')).body.error.code).toBe('LISTING_UNAVAILABLE');
+    expect((await land(a, home, 'unlist')).status).toBe(200);
+    expect((await land(a, home, 'unlist')).body.error.code).toBe('LISTING_UNAVAILABLE');
+    expect((await request(`/territories/${home}`)).body.territory.listing).toBeNull();
+  });
+  it('force-buys at the premium after protection, once per pair per cooldown', async () => {
+    const [a, b, c] = await Promise.all([settler(), settler(), settler()]);
+    const [home, farm] = await homestead(a);
+    expect((await claim(a, farm)).status).toBe(200);
+    expect(
+      (
+        await request(
+          '/structures/build',
+          { territory_id: farm, idempotency_key: uuid() },
+          a.cookie,
+        )
+      ).status,
+    ).toBe(200);
+    // The facility's 20 Gold joins both the market price and the owner's cost basis.
+    expect((await request(`/territories/${farm}`)).body.territory).toMatchObject({
+      market_price_gold: 30,
+      buyout_price_gold: 36,
+    });
+    expect((await owner(farm)).acquired_price).toBe(30);
+    expect((await land(b, farm, 'buy', 36)).body.error.code).toBe('PROTECTED');
+    await unprotect(a);
+    expect((await land(b, farm, 'buy', 35)).body.error.code).toBe('PRICE_CHANGED');
+    const forced = await land(b, farm, 'buy', 36);
+    expect(forced.status, JSON.stringify(forced.body)).toBe(200);
+    expect(forced.body.result).toMatchObject({ kind: 'buyout', price_gold: 36, tax_gold: 1 });
+    const built = await db
+      .prepare('SELECT structure_type FROM territories WHERE id=?')
+      .bind(farm)
+      .first('structure_type');
+    expect(built).toBeTruthy();
+    expect((await state(a)).gold_balance).toBe(70 + 35);
+    expect((await state(b)).gold_balance).toBe(100 - 36);
+    await cooldown(b);
+    expect((await land(b, home, 'buy', 12)).body.error.code).toBe('BUYOUT_COOLDOWN');
+    expect((await land(a, home, 'buy', 12)).body.error.code).toBe('SELF_TRADE');
+    // A free starter plot has no cost basis, so its whole price is taxed at 30%.
+    const last = await land(c, home, 'buy', 12);
+    expect(last.body.result).toMatchObject({ kind: 'buyout', price_gold: 12, tax_gold: 4 });
+    const dispossessed = await state(a);
+    expect(dispossessed.gold_balance).toBe(105 + 8);
+    expect(dispossessed.territory_count).toBe(0);
+    // With no land left, any open plot can be claimed to start again.
+    const restart = (await db
+      .prepare(
+        "SELECT id FROM territories WHERE region_id=? AND owner_user_id IS NULL AND terrain_type<>'water' AND y>20 LIMIT 1",
+      )
+      .bind(lakes)
+      .first<{ id: string }>())!.id;
+    expect((await claim(a, restart)).status).toBe(200);
+    const trades = await db
+      .prepare(
+        'SELECT kind,price_gold,tax_gold FROM land_trades WHERE seller_user_id=? ORDER BY created_at,rowid',
+      )
+      .bind(a.id)
+      .all();
+    expect(trades.results).toEqual([
+      { kind: 'buyout', price_gold: 36, tax_gold: 1 },
+      { kind: 'buyout', price_gold: 12, tax_gold: 4 },
+    ]);
+    await expect(db.prepare('DELETE FROM land_trades').run()).rejects.toThrow('IMMUTABLE_LEDGER');
+    await Promise.all([ledgerMatches(a), ledgerMatches(b), ledgerMatches(c)]);
   });
 });
 

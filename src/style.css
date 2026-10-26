@@ -806,6 +806,33 @@ p {
   margin: 9px 0;
   font-size: 12px;
 }
+.land-box dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  margin: 0 0 10px;
+  font-size: 11px;
+}
+.land-box dd {
+  margin: 0;
+}
+.land-box > strong {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 8px;
+}
+.land-box form {
+  display: grid;
+  gap: 8px;
+}
+.land-box label {
+  display: grid;
+  gap: 4px;
+  font-size: 10px;
+}
+.land-box .fine-print {
+  margin: 8px 0 0;
+}
 .yield-box > small {
   font-size: 9px;
   color: #99a18f;

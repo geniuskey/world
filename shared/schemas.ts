@@ -23,6 +23,10 @@ export const sellSchema = z
     idempotency_key: key,
   })
   .strict();
+// Land listings ask, and land purchases cap, a Gold price; triggers enforce the buyout bound.
+export const landPriceSchema = z
+  .object({ price_gold: z.number().int().min(1).max(1_000_000), idempotency_key: key })
+  .strict();
 export const keySchema = z.object({ idempotency_key: key }).strict();
 export const loginSchema = z
   .object({

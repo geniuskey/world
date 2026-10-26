@@ -39,7 +39,7 @@
         "WORLD_AUTO_SPLIT_ENABLED": "false",
         "COMBAT_ENABLED": "false",
         "PAYMENTS_ENABLED": "false",
-        "LAND_TRADING_ENABLED": "false",
+        "LAND_TRADING_ENABLED": "true",
         "GOOGLE_CLIENT_ID": "",
       },
       "d1_databases": [

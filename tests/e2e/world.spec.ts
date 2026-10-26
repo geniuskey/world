@@ -149,6 +149,44 @@ test('two independent browser sessions can buy and cancel escrowed lots', async 
     await context.close();
   }
 });
+test('an owner lists a plot and another session buys it at the asking price', async ({
+  page,
+  browser,
+}) => {
+  await signup(page);
+  const home = (await (await page.request.get('/api/me/state')).json()).territories[0];
+  await page.getByTestId(`tile-${home.x + 1}-${home.y}`).focus();
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Claim territory', exact: true }).click();
+  const tile = (await (await page.request.get('/api/me/state')).json()).territories.find(
+    (t: { x: number; y: number }) => t.x === home.x + 1 && t.y === home.y,
+  );
+  await page.goto(`/territory/${tile.id}`);
+  await page.getByLabel('Asking price (Gold)').fill('11');
+  await expect(
+    page.getByText('You would receive 10 Gold after 1 Gold transfer tax.'),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'List for sale', exact: true }).click();
+  await expect(page.getByText('Listed for 11 Gold')).toBeVisible();
+  const context = await browser.newContext({ baseURL: 'http://localhost:5175' });
+  await context.route('https://tiles.openfreemap.org/**', (route) => route.abort());
+  const buyerPage = await context.newPage();
+  try {
+    await signup(buyerPage);
+    await buyerPage.goto(`/territory/${tile.id}`);
+    await buyerPage.getByRole('button', { name: 'Buy for 11 Gold', exact: true }).click();
+    await expect(buyerPage.getByText('The land is yours.')).toBeVisible();
+    const buyer = await (await buyerPage.request.get('/api/me/state')).json();
+    expect(buyer.gold_balance).toBe(89);
+    expect(buyer.territories.some((t: { id: string }) => t.id === tile.id)).toBe(true);
+    const seller = await (await page.request.get('/api/me/state')).json();
+    // 100 - 10 land price + 11 sale - 1 transfer tax.
+    expect(seller.gold_balance).toBe(100);
+    expect(seller.territory_count).toBe(1);
+  } finally {
+    await context.close();
+  }
+});
 test('studio remains a preview and operator page is private', async ({ page }) => {
   await page.goto('/store');
   await expect(page.getByText('Preview only · Purchases are unavailable')).toBeVisible();
