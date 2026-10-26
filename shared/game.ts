@@ -75,6 +75,32 @@ export type LandListing = {
   price_gold: number;
   created_at: number;
 };
+// A change of hands the viewer took part in; `sold` is 1 when they were the seller.
+export type LandTrade = {
+  id: string;
+  territory_id: string;
+  kind: 'listing' | 'buyout';
+  price_gold: number;
+  tax_gold: number;
+  created_at: number;
+  sold: number;
+  other_user_id: string;
+  other_name: string | null;
+};
+export type LandEvent = {
+  type: 'join' | 'claim' | 'build' | 'buy';
+  user_id: string;
+  display_name: string | null;
+  created_at: number;
+  kind: 'listing' | 'buyout' | null;
+  price_gold: number | null;
+  seller_user_id: string | null;
+  seller_name: string | null;
+};
+export type LandHistory = {
+  first: { user_id: string; display_name: string | null; at: number } | null;
+  events: LandEvent[];
+};
 export type Player = {
   id: string;
   display_name: string;

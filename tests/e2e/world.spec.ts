@@ -155,7 +155,7 @@ test('an owner lists a plot and another session buys it at the asking price', as
   page,
   browser,
 }) => {
-  await signup(page, unique(), BUSAN);
+  const sellerName = await signup(page, unique(), BUSAN);
   const home = (await (await page.request.get('/api/me/state')).json()).territories[0];
   await page.getByTestId(`tile-${home.x + 1}-${home.y}`).focus();
   await page.keyboard.press('Enter');
@@ -185,6 +185,34 @@ test('an owner lists a plot and another session buys it at the asking price', as
     // 100 - 10 land price + 11 sale - 1 transfer tax.
     expect(seller.gold_balance).toBe(100);
     expect(seller.territory_count).toBe(1);
+    // The buyer sees the plot's record; the seller is told once and has a public profile.
+    await buyerPage.reload();
+    await expect(buyerPage.getByText('First settled by')).toBeVisible();
+    await expect(buyerPage.getByRole('link', { name: sellerName }).first()).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Your land changed hands')).toBeVisible();
+    const seen = page.waitForResponse('**/api/me/notifications/seen');
+    await page.getByRole('button', { name: 'Dismiss' }).click();
+    expect((await seen).ok()).toBe(true);
+    await expect(page.getByText('Your land changed hands')).toHaveCount(0);
+    await page.reload();
+    await expect(
+      page.getByText('First settled by').or(page.locator('.welcome-panel')),
+    ).toBeVisible();
+    await expect(page.getByText('Your land changed hands')).toHaveCount(0);
+    // Zoomed in, owned plots carry their owner's name on the map.
+    await buyerPage.getByRole('button', { name: 'Close' }).first().click();
+    for (let i = 0; i < 2; i++)
+      await buyerPage.getByRole('button', { name: 'Zoom in', exact: true }).click();
+    await expect(
+      buyerPage
+        .locator('.plot-owner')
+        .filter({ hasText: sellerName.slice(0, 9) })
+        .first(),
+    ).toBeVisible();
+    await page.goto(`/player/${seller.user.id}`);
+    await expect(page.getByRole('heading', { name: sellerName })).toBeVisible();
+    await expect(page.getByText(/^Sold to /)).toBeVisible();
   } finally {
     await context.close();
   }

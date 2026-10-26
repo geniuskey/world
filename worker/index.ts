@@ -14,6 +14,7 @@ import {
 } from '../shared/schemas';
 import { Db } from './db';
 import { withPopulation } from './population';
+import { landHistory, landNotices, landTrades, playerProfile, shareMeta } from './land';
 import { prepareSettlement, regionExists, worldTiles, virtualTerritories } from './world';
 import { isPlotRegion, parseTerritoryId, plotRegion } from '../shared/plots';
 import { WORLD_INITIAL_TILES, WORLD_SPLIT_PLAYERS, WORLD_MAX_LEVEL } from '../shared/worldGrid';
@@ -128,7 +129,9 @@ app.use('/api/*', async (c, next) => {
     (/^\/api\/(market|land)\//.test(path) && c.req.method !== 'GET');
   if (needsAuth) {
     const user = await authenticate(c);
-    await limit(c, `user:${user.id}`, c.req.method === 'GET' ? 120 : 30);
+    // Reads and writes count separately, so browsing never uses up the write budget.
+    const read = c.req.method === 'GET';
+    await limit(c, `user:${user.id}:${read ? 'read' : 'write'}`, read ? 120 : 30);
   } else if (c.req.method !== 'GET') {
     const client = await sha256(
       `${c.req.header('cf-connecting-ip') || 'local'}:${Math.floor(c.get('now') / 86400)}`,
@@ -235,7 +238,10 @@ app.get('/api/map/chunks', (c) =>
     }
     const etag = `"${season.id}-${region}-${cx}-${cy}-${version.version}"`;
     const tiles = await db.all(
-      'SELECT id,region_id,season_id,x,y,gx,gy,cx,cy,terrain_type,owner_user_id,acquired_at,version,structure_type,is_starter FROM territories WHERE season_id=? AND region_id=? AND cx=? AND cy=? ORDER BY y,x',
+      `SELECT t.id,t.region_id,t.season_id,t.x,t.y,t.gx,t.gy,t.cx,t.cy,t.terrain_type,t.owner_user_id,
+      CASE WHEN u.status='active' THEN p.display_name END AS owner_name,t.acquired_at,t.version,t.structure_type,t.is_starter
+      FROM territories t LEFT JOIN users u ON u.id=t.owner_user_id LEFT JOIN profiles p ON p.user_id=t.owner_user_id
+      WHERE t.season_id=? AND t.region_id=? AND t.cx=? AND t.cy=? ORDER BY t.y,t.x`,
       season.id,
       region,
       cx,
@@ -299,6 +305,16 @@ app.get('/api/territories/:id', async (c) => {
   const territory = await withPopulation(c.get('db'), tile as import('../shared/game').Territory);
   return c.json({ territory: { ...territory, ...(await landQuote(c.get('db'), territory)) } });
 });
+app.get('/api/territories/:id/history', async (c) => {
+  const db = c.get('db'),
+    season = await currentSeason(db);
+  return c.json(await landHistory(db, season.id, id.parse(c.req.param('id'))));
+});
+app.get('/api/players/:id', async (c) => {
+  const db = c.get('db'),
+    season = await currentSeason(db);
+  return c.json(await playerProfile(db, season.id, id.parse(c.req.param('id'))));
+});
 app.get('/api/leaderboards', (c) =>
   publicCache(c, 3600, async () => {
     const db = c.get('db'),
@@ -333,6 +349,18 @@ app.post('/api/auth/logout', async (c) => {
   return c.json({ ok: true });
 });
 app.get('/api/me', (c) => c.json({ user: c.get('user') }));
+app.get('/api/me/notifications', async (c) => {
+  const db = c.get('db'),
+    season = await currentSeason(db);
+  return c.json({ land: await landNotices(db, season.id, c.get('user').id) });
+});
+app.post('/api/me/notifications/seen', async (c) => {
+  keySchema.parse(await jsonBody(c));
+  await c
+    .get('db')
+    .run('UPDATE profiles SET land_seen_at=? WHERE user_id=?', c.get('now'), c.get('user').id);
+  return c.json({ ok: true });
+});
 app.get('/api/me/state', async (c) =>
   c.json(await playerState(c.get('db'), c.get('user'), c.get('now'))),
 );
@@ -382,7 +410,8 @@ app.get('/api/me/transactions', async (c) => {
       user,
     ),
   ]);
-  return c.json({ gold, resources, orders, history });
+  const land = await landTrades(db, season, user, 0, 50);
+  return c.json({ gold, resources, orders, history, land });
 });
 for (const [path, type] of [
   ['/api/actions/claim', 'claim'],
@@ -620,6 +649,32 @@ for (const path of ['/api/payments/checkout', '/api/payments/webhook', '/api/act
   });
 app.all('/api/*', () => {
   throw new ApiError('NOT_FOUND', 404);
+});
+// Shared plot links get a title naming the place and its owner for link previews.
+app.get('/territory/:id', async (c) => {
+  const territory = id.safeParse(c.req.param('id'));
+  const locale = c.req.header('accept-language')?.toLowerCase().startsWith('ko') ? 'ko' : 'en';
+  const meta = territory.success
+    ? await shareMeta(new Db(c.env.DB), territory.data, locale, c.env.ASSETS, c.req.url)
+    : null;
+  if (!c.env.ASSETS) return c.json({ meta });
+  const page = await c.env.ASSETS.fetch(new URL('/', c.req.url));
+  if (!meta) return page;
+  const set = (value: string) => ({
+    element(element: Element) {
+      element.setAttribute('content', value);
+    },
+  });
+  return new HTMLRewriter()
+    .on('title', {
+      element(element) {
+        element.setInnerContent(`${meta.title} — WORLD`);
+      },
+    })
+    .on('meta[name="description"]', set(meta.description))
+    .on('meta[property="og:title"]', set(meta.title))
+    .on('meta[property="og:description"]', set(meta.description))
+    .transform(page);
 });
 app.get('*', (c) => (c.env.ASSETS ? c.env.ASSETS.fetch(c.req.raw) : c.text('WORLD API')));
 

@@ -9,6 +9,7 @@ import {
   type Region,
   type Player,
   type PlayerState,
+  type LandTrade,
 } from '../shared/game';
 
 function useWorldState() {
@@ -22,6 +23,7 @@ function useWorldState() {
   const [loading, setLoading] = useState(true),
     [error, setError] = useState<string | null>(null),
     [authOpen, setAuthOpen] = useState(false);
+  const [notices, setNotices] = useState<LandTrade[]>([]);
   const [toast, setToast] = useState<string | null>(null),
     [revision, setRevision] = useState(0);
   const t = useCallback(
@@ -54,6 +56,10 @@ function useWorldState() {
       const result = await api<PlayerState>('/me/state', { fresh });
       setState(result);
       setUser(result.user);
+      // Land sold or force-bought away since the owner last dismissed the notice.
+      void api<{ land: LandTrade[] }>('/me/notifications', { fresh: true })
+        .then((r) => setNotices(r.land))
+        .catch(() => {});
       setConfig((current) => (current ? { ...current, season: result.season } : current));
     } catch (e) {
       if (e instanceof ApiFailure && e.status === 401) {
@@ -131,6 +137,13 @@ function useWorldState() {
     notify,
     fail,
     revision,
+    notices,
+    dismissNotices: async () => {
+      setNotices([]);
+      await post('/me/notifications/seen', { idempotency_key: crypto.randomUUID() }).catch(
+        () => {},
+      );
+    },
   };
 }
 const WorldContext = createContext<ReturnType<typeof useWorldState> | null>(null);

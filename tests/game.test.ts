@@ -797,6 +797,51 @@ describe('land trading', () => {
     ]);
     await expect(db.prepare('DELETE FROM land_trades').run()).rejects.toThrow('IMMUTABLE_LEDGER');
     await Promise.all([ledgerMatches(a), ledgerMatches(b), ledgerMatches(c)]);
+
+    // Permanent public history: the first settler stays on record after the plot changes hands.
+    const history = (await request(`/territories/${farm}/history`)).body;
+    expect(history.first.user_id).toBe(a.id);
+    // cooldown() backdates the purchase, so compare the events by type.
+    expect(history.events.map((e: { type: string }) => e.type).sort()).toEqual([
+      'build',
+      'buy',
+      'claim',
+    ]);
+    expect(history.events.find((e: { type: string }) => e.type === 'buy')).toMatchObject({
+      user_id: b.id,
+      kind: 'buyout',
+      price_gold: 36,
+      seller_user_id: a.id,
+    });
+    const profile = (await request(`/players/${a.id}`)).body;
+    expect(profile.player).toMatchObject({ territory_count: 1, first_settled: 3 });
+    expect(profile.plots.map((p: { id: string }) => p.id)).toEqual([restart]);
+    expect(profile.trades).toHaveLength(2);
+    expect(profile.trades.every((t: { sold: number }) => t.sold === 1)).toBe(true);
+    // The displaced owner is told once, until they dismiss it.
+    const notices = (await request('/me/notifications', undefined, a.cookie)).body.land;
+    expect(notices.map((n: { other_user_id: string }) => n.other_user_id).sort()).toEqual(
+      [b.id, c.id].sort(),
+    );
+    expect((await request('/me/notifications', undefined, b.cookie)).body.land).toEqual([]);
+    expect(
+      (await request('/me/notifications/seen', { idempotency_key: uuid() }, a.cookie)).status,
+    ).toBe(200);
+    expect((await request('/me/notifications', undefined, a.cookie)).body.land).toEqual([]);
+    // Owner names appear on the map, and shared links name the owner.
+    const row = (await db
+      .prepare('SELECT cx,cy FROM territories WHERE id=?')
+      .bind(farm)
+      .first<{ cx: number; cy: number }>())!;
+    const chunk = (await request(`/map/chunks?region=${lakes}&cx=${row.cx}&cy=${row.cy}`)).body;
+    const named = chunk.tiles.find((t: Territory) => t.id === farm);
+    expect(named.owner_name).toBe(b.state.user.display_name);
+    const share = await mf.dispatchFetch(`http://localhost:8787/territory/${farm}`);
+    expect(((await share.json()) as { meta: { title: string } }).meta.title).toBe(
+      `${b.state.user.display_name}'s land · Plot ${farm.split(':').slice(-2).join('-')}`,
+    );
+    await db.prepare("UPDATE users SET status='blocked' WHERE id=?").bind(c.id).run();
+    expect((await request(`/players/${c.id}`)).status).toBe(404);
   });
 });
 
@@ -839,10 +884,17 @@ describe('operations and season boundaries', () => {
     const bucket = Math.floor(Date.now() / 1000 / 60);
     await db
       .prepare('INSERT OR REPLACE INTO rate_limits VALUES(?,?,?)')
-      .bind(`user:${a.id}:${bucket}`, 121, (bucket + 1) * 60)
+      .bind(`user:${a.id}:read:${bucket}`, 121, (bucket + 1) * 60)
       .run();
     expect((await request('/me', undefined, a.cookie)).status).toBe(429);
-    await db.prepare('DELETE FROM rate_limits WHERE key=?').bind(`user:${a.id}:${bucket}`).run();
+    // Exhausted reads leave the separate write budget intact.
+    expect(
+      (await request('/me/notifications/seen', { idempotency_key: uuid() }, a.cookie)).status,
+    ).toBe(200);
+    await db
+      .prepare('DELETE FROM rate_limits WHERE key=?')
+      .bind(`user:${a.id}:read:${bucket}`)
+      .run();
     await db.prepare("UPDATE users SET status='blocked' WHERE id=?").bind(a.id).run();
     expect((await request('/me', undefined, a.cookie)).status).toBe(401);
     const b = await actor();

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   ArrowRight,
   ArrowUpRight,
@@ -19,8 +19,16 @@ import {
 } from 'lucide-react';
 import { useWorld } from './state';
 import { api, mutate, post } from './api';
-import { Empty, Modal, PageHeading, Resource, resourceIcon } from './components';
-import { RESOURCE_KINDS, tradeTax, type Order, type Rank, type ResourceKind } from '../shared/game';
+import { Empty, Modal, PageHeading, PlotName, Resource, resourceIcon } from './components';
+import {
+  RESOURCE_KINDS,
+  tradeTax,
+  type LandTrade,
+  type Order,
+  type Rank,
+  type ResourceKind,
+  type Territory,
+} from '../shared/game';
 import type { TextKey } from './i18n';
 
 type Entry = {
@@ -67,6 +75,7 @@ export function AccountPage() {
     gold: Entry[];
     resources: Entry[];
     history: { season_id: string; territory_count: number; produced_total: number }[];
+    land: LandTrade[];
   } | null>(null);
   useEffect(() => {
     if (state) void api<typeof transactions>('/me/transactions').then(setTransactions).catch(fail);
@@ -117,9 +126,19 @@ export function AccountPage() {
   return (
     <main className="page">
       <PageHeading eyebrow={t('yourChapter')} title={t('estateTitle')} body={t('estateBody')}>
-        <Link className="button primary" to={`/territory/${state.territories[0].id}`}>
-          {t('focusHome')}
-          <ArrowUpRight size={17} />
+        {state.territories[0] ? (
+          <Link className="button primary" to={`/territory/${state.territories[0].id}`}>
+            {t('focusHome')}
+            <ArrowUpRight size={17} />
+          </Link>
+        ) : (
+          <Link className="button primary" to="/">
+            {t('startAgain')}
+            <ArrowUpRight size={17} />
+          </Link>
+        )}
+        <Link className="button secondary" to={`/player/${state.user.id}`}>
+          {t('publicProfile')}
         </Link>
       </PageHeading>
       <div className="stat-grid">
@@ -236,6 +255,10 @@ export function AccountPage() {
               ))}
             </details>
           )}
+        </section>
+        <section className="panel">
+          <h2>{t('landTrades')}</h2>
+          <TradeList trades={transactions?.land ?? []} />
         </section>
         <section className="panel">
           <h2>{t('achievements')}</h2>
@@ -596,7 +619,9 @@ export function LeaderboardPage() {
               </span>
               <span className="rank-name">
                 <span className="avatar">{row.display_name.slice(0, 1)}</span>
-                <strong>{row.display_name}</strong>
+                <Link className="text-link" to={`/player/${row.user_id}`}>
+                  <strong>{row.display_name}</strong>
+                </Link>
                 {Boolean(row.is_test) && <span className="test-label">{t('testAccount')}</span>}
               </span>
               <span>{row.territory_count}</span>
@@ -613,6 +638,121 @@ export function LeaderboardPage() {
         {t('hourly')}{' '}
         {data && `${t('updated')}: ${new Date(data.generated_at * 1000).toLocaleString()}`}
       </p>
+    </main>
+  );
+}
+function TradeList({ trades }: { trades: LandTrade[] }) {
+  const { t } = useWorld();
+  if (!trades.length) return <p>{t('noLandTrades')}</p>;
+  return (
+    <>
+      {trades.map((trade) => (
+        <div className="history-row" key={trade.id}>
+          <span>
+            <Link className="text-link" to={`/territory/${trade.territory_id}`}>
+              <PlotName id={trade.territory_id} />
+            </Link>
+            <small>
+              {t(
+                trade.sold
+                  ? trade.kind === 'buyout'
+                    ? 'tradeLostTo'
+                    : 'tradeSoldTo'
+                  : trade.kind === 'buyout'
+                    ? 'tradeForcedFrom'
+                    : 'tradeBoughtFrom',
+                { name: trade.other_name || t('formerSettler') },
+              )}{' '}
+              · {new Date(trade.created_at * 1000).toLocaleDateString()}
+            </small>
+          </span>
+          <span className={trade.sold ? 'positive' : ''}>
+            {trade.sold ? `+${trade.price_gold - trade.tax_gold}` : `-${trade.price_gold}`} Gold
+          </span>
+        </div>
+      ))}
+    </>
+  );
+}
+export function PlayerPage() {
+  const { t } = useWorld();
+  const { playerId } = useParams();
+  const { data, error, loading } = useData<{
+    player: {
+      id: string;
+      display_name: string;
+      created_at: number;
+      is_test: number;
+      territory_count: number;
+      produced_total: number;
+      first_settled: number;
+    };
+    plots: Territory[];
+    trades: LandTrade[];
+  }>(`/players/${playerId}`);
+  if (error)
+    return (
+      <main className="page">
+        <Empty title={error} />
+      </main>
+    );
+  if (loading || !data) return <main className="page">{t('loading')}</main>;
+  const { player, plots, trades } = data;
+  return (
+    <main className="page">
+      <PageHeading
+        eyebrow={t('settlerProfile')}
+        title={player.display_name}
+        body={t('settlerSince', { date: new Date(player.created_at * 1000).toLocaleDateString() })}
+      />
+      <div className="stat-grid">
+        <div className="stat-card">
+          <Flag size={22} />
+          <small>{t('land')}</small>
+          <strong>{player.territory_count}</strong>
+        </div>
+        <div className="stat-card">
+          <Trophy size={22} />
+          <small>{t('firstSettled')}</small>
+          <strong>{player.first_settled}</strong>
+        </div>
+        <div className="stat-card">
+          <Sprout size={22} />
+          <small>{t('grown')}</small>
+          <strong>{player.produced_total.toLocaleString()}</strong>
+        </div>
+      </div>
+      <div className="account-grid">
+        <section className="panel">
+          <h2>
+            {t('theirLand')}
+            <span className="count-pill">{player.territory_count}</span>
+          </h2>
+          <div className="land-list">
+            {plots.map((tile) => (
+              <Link key={tile.id} className="land-row" to={`/territory/${tile.id}`}>
+                <span className={`land-icon ${tile.terrain_type}`}>
+                  {tile.terrain_type === 'forest' ? <Leaf size={22} /> : <Flag size={22} />}
+                </span>
+                <div>
+                  <strong>
+                    <PlotName id={tile.id} />
+                  </strong>
+                  <small>
+                    {t(tile.terrain_type)}
+                    {tile.structure_type ? ` · ${t(tile.structure_type as TextKey)}` : ''}
+                  </small>
+                </div>
+                <ArrowUpRight size={17} />
+              </Link>
+            ))}
+          </div>
+        </section>
+        <section className="panel">
+          <h2>{t('landTrades')}</h2>
+          <TradeList trades={trades} />
+        </section>
+      </div>
     </main>
   );
 }

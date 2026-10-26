@@ -1,6 +1,6 @@
 # Land ownership v2
 
-Status: design accepted 2026-10-26. Permanent ownership is implemented (migration 0011): the active season never ends and is no longer rotated, so every `season_id` key and ledger trigger stays unchanged. Real place names are implemented for South Korea ([map data](map-data.md#place-names)). Every point on Earth is a claimable zoom-17 plot and players settle the plot they choose (migration 0012, [map data](map-data.md#plot-grid)). First claims pay the plot's base value as its market price (migration 0013, [economy](economy.md#land-price)): ten turns of the plot's income, so the location factor is imported population; landmark tiers, facility development and the demand index are not applied yet. Listings, purchases and forced buyouts with protection, the per-pair cooldown and the transfer tax are implemented (migration 0014, [economy](economy.md#land-trading)) behind `LAND_TRADING_ENABLED`, which is on locally and off in production until the parameters are tuned. The demand index is not applied yet, so market price is still base value; the rest of rules v1 ([game-rules.md](game-rules.md), [economy.md](economy.md)) remains in force.
+Status: design accepted 2026-10-26. Permanent ownership is implemented (migration 0011): the active season never ends and is no longer rotated, so every `season_id` key and ledger trigger stays unchanged. Real place names are implemented for South Korea ([map data](map-data.md#place-names)). Every point on Earth is a claimable zoom-17 plot and players settle the plot they choose (migration 0012, [map data](map-data.md#plot-grid)). First claims pay the plot's base value as its market price (migration 0013, [economy](economy.md#land-price)): ten turns of the plot's income, so the location factor is imported population; landmark tiers, facility development and the demand index are not applied yet. Listings, purchases and forced buyouts with protection, the per-pair cooldown and the transfer tax are implemented (migration 0014, [economy](economy.md#land-trading)) behind `LAND_TRADING_ENABLED`, which is on locally and off in production until the parameters are tuned. Owner names on the map, public owner profiles, the per-plot record and owner notices are implemented (migration 0015, see [Records](#records)). The demand index is not applied yet, so market price is still base value; the rest of rules v1 ([game-rules.md](game-rules.md), [economy.md](economy.md)) remains in force.
 
 ## Goal
 
@@ -41,6 +41,14 @@ The buyout price is a hard ceiling: nobody pays more than they could force. An o
 Buying costs one energy plus the price and, unlike a claim, needs no adjacent plot. A buy fills an open listing if there is one, otherwise it is a forced buyout; the buyer states the most they will pay, so a price change fails with `PRICE_CHANGED` instead of charging more. A player who loses every plot may claim any open plot to start again.
 
 Former and first owners stay in a permanent public history ("first settler of …"). Losing a plot keeps the record and pays the premium, but grants no economic protection.
+
+## Records
+
+- **Map:** at zoom 15 and above, with the ownership layer on, owned plots show their owner's name (`owner_name` in `/api/map/chunks`; blocked accounts show none).
+- **Plot record:** `GET /api/territories/:id/history` returns the first settler and the last 20 events (settlement, claim, facility, purchase or buyout with price and previous owner), read from `actions` and `land_trades`. Plots never return to the commons, so the first join or claim is the first settler forever.
+- **Profiles:** `GET /api/players/:id` lists an active player's plots, first-settlement count and recent land trades; `/player/:id` renders it, linked from owner names and the leaderboard.
+- **Notices:** `GET /api/me/notifications` lists land sold or force-bought away since `profiles.land_seen_at`; `POST /api/me/notifications/seen` dismisses them. The app shows them as a banner until dismissed.
+- **Share cards:** the Worker serves `/territory/:id` with a title naming the owner and the real place (`og:title`, `og:description`), and the inspector's Share button uses the system share sheet or copies the link. There is no preview image yet.
 
 ## Abuse cases
 

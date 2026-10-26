@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   ArrowRight,
   Compass,
+  Share2,
   Flag,
   Globe2,
   Layers,
@@ -26,7 +27,14 @@ import { api, mutate, post } from './api';
 import { Empty, Modal, Resource } from './components';
 import { worldTileFromId, WORLD_INITIAL_TILES } from '../shared/worldGrid';
 import { parseTerritoryId, plotAt, plotTerritoryId, regionFor } from '../shared/plots';
-import { landTax, plotPrice, terrainResource, type Region, type Territory } from '../shared/game';
+import {
+  landTax,
+  plotPrice,
+  terrainResource,
+  type LandHistory,
+  type Region,
+  type Territory,
+} from '../shared/game';
 import type { TextKey } from './i18n';
 
 export function MapPage() {
@@ -410,7 +418,12 @@ export function MapPage() {
                       {t('yours')}
                     </>
                   ) : tile.owner_user_id ? (
-                    `${t('ownedBy')} ${tile.owner_name || '…'}`
+                    <>
+                      {t('ownedBy')}{' '}
+                      <Link className="text-link" to={`/player/${tile.owner_user_id}`}>
+                        {tile.owner_name || '…'}
+                      </Link>
+                    </>
                   ) : (
                     t('noOwner')
                   )}
@@ -526,6 +539,25 @@ export function MapPage() {
                 ) : (
                   <p>{t('ownedHint')}</p>
                 )}
+                <LandRecord tile={tile} />
+                <button
+                  className="subtle-button"
+                  onClick={() => {
+                    const url = `${location.origin}/territory/${tile.id}`;
+                    const where = place
+                      ? placeName(place.place, locale, true)
+                      : t(tile.region_id as TextKey);
+                    const text = t(mine ? 'shareMine' : 'shareThis', { place: where });
+                    if (navigator.share)
+                      void navigator.share({ title: 'WORLD', text, url }).catch(() => {});
+                    else
+                      void navigator.clipboard
+                        .writeText(`${text} ${url}`)
+                        .then(() => notify('linkCopied'), fail);
+                  }}
+                >
+                  <Share2 size={13} /> {t('share')}
+                </button>
                 {user && tile.owner_user_id && !mine && (
                   <button className="subtle-button" onClick={() => setReportOpen(true)}>
                     {t('report')}
@@ -730,5 +762,61 @@ function LandTrade({
         </>
       )}
     </div>
+  );
+}
+
+// The plot's permanent public record: its first settler and recent changes.
+function LandRecord({ tile }: { tile: Territory }) {
+  const { t, locale, revision } = useWorld();
+  const [history, setHistory] = useState<LandHistory | null>(null);
+  useEffect(() => {
+    let current = true;
+    setHistory(null);
+    if (tile.owner_user_id)
+      void api<LandHistory>(`/territories/${tile.id}/history`, { fresh: true })
+        .then((result) => current && setHistory(result))
+        .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [tile.id, tile.owner_user_id, revision]);
+  if (!history?.first) return null;
+  const date = (seconds: number) =>
+    new Date(seconds * 1000).toLocaleDateString(locale === 'ko' ? 'ko-KR' : 'en-US');
+  const who = (id: string, name: string | null) => (
+    <Link className="text-link" to={`/player/${id}`}>
+      {name || t('formerSettler')}
+    </Link>
+  );
+  const action = { join: 'eventJoin', claim: 'eventClaim', build: 'eventBuild' } as const;
+  return (
+    <section className="land-record" aria-label={t('landRecord')}>
+      <span className="eyebrow">{t('landRecord')}</span>
+      <p>
+        {t('firstSettler')} {who(history.first.user_id, history.first.display_name)} ·{' '}
+        {date(history.first.at)}
+      </p>
+      <ol>
+        {history.events.slice(0, 5).map((event, i) => (
+          <li key={i}>
+            <span>
+              {who(event.user_id, event.display_name)}{' '}
+              {t(
+                event.type === 'buy'
+                  ? event.kind === 'buyout'
+                    ? 'eventBuyout'
+                    : 'eventBought'
+                  : action[event.type],
+                { gold: event.price_gold ?? 0 },
+              )}
+              {event.type === 'buy' && event.seller_user_id && (
+                <> · {who(event.seller_user_id, event.seller_name)}</>
+              )}
+            </span>
+            <small>{date(event.created_at)}</small>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

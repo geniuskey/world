@@ -2,13 +2,14 @@ import React, { useEffect, lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { WorldProvider, useWorld } from './state';
-import { Header, Footer, AuthModal, Toast, Empty } from './components';
+import { Header, Footer, AuthModal, Toast, Empty, LandNotices } from './components';
 import { MapPage } from './Map';
 const AccountPage = lazy(() => import('./pages').then((m) => ({ default: m.AccountPage })));
 const MarketPage = lazy(() => import('./pages').then((m) => ({ default: m.MarketPage })));
 const LeaderboardPage = lazy(() => import('./pages').then((m) => ({ default: m.LeaderboardPage })));
 const StorePage = lazy(() => import('./pages').then((m) => ({ default: m.StorePage })));
 const RulesPage = lazy(() => import('./pages').then((m) => ({ default: m.RulesPage })));
+const PlayerPage = lazy(() => import('./pages').then((m) => ({ default: m.PlayerPage })));
 const AdminPage = lazy(() => import('./pages').then((m) => ({ default: m.AdminPage })));
 import { post } from './api';
 import './style.css';
@@ -43,12 +44,14 @@ function App() {
           {config && config.season.ends_at < Date.now() / 1000 && (
             <div className="season-ended">{t('seasonEnded')}</div>
           )}
+          <LandNotices />
           <Suspense fallback={<main className="page">{t('loading')}</main>}>
             <Routes>
               <Route path="/" element={<MapPage />} />
               <Route path="/region/:regionId" element={<MapPage />} />
               <Route path="/territory/:territoryId" element={<MapPage />} />
               <Route path="/me" element={<AccountPage />} />
+              <Route path="/player/:playerId" element={<PlayerPage />} />
               <Route path="/market" element={<MarketPage />} />
               <Route path="/leaderboard" element={<LeaderboardPage />} />
               <Route path="/store" element={<StorePage />} />

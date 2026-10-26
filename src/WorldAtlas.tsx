@@ -679,6 +679,41 @@ export function Atlas({
               />
             );
           })}
+        {ready &&
+          map &&
+          region &&
+          layers.ownership &&
+          view.zoom >= 15 &&
+          tiles.map((tile) => {
+            if (!tile.owner_name) return null;
+            // Label a plot only when it is drawn wide enough to hold a short name.
+            const left = map.project(gridPoint(region, tile.x, tile.y + 0.5)),
+              right = map.project(gridPoint(region, tile.x + 1, tile.y + 0.5)),
+              center = map.project(gridPoint(region, tile.x + 0.5, tile.y + 0.5));
+            const width = Math.hypot(right.x - left.x, right.y - left.y);
+            if (
+              width < 56 ||
+              center.x < 0 ||
+              center.y < 0 ||
+              center.x > view.width ||
+              center.y > view.height
+            )
+              return null;
+            const name =
+              tile.owner_name.length > 10 ? `${tile.owner_name.slice(0, 9)}…` : tile.owner_name;
+            return (
+              <text
+                key={`owner-${tile.id}`}
+                className="plot-owner"
+                x={center.x}
+                y={center.y}
+                fontSize={Math.min(13, width / 6)}
+                data-testid={`owner-${tile.x}-${tile.y}`}
+              >
+                {name}
+              </text>
+            );
+          })}
       </svg>
       {measuring && (
         <div className="map-measure-banner" role="status">

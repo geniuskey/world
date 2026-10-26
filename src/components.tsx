@@ -18,7 +18,13 @@ import {
 import { useWorld } from './state';
 import { api, post } from './api';
 import type { TextKey } from './i18n';
-import { isPlotRegion, parseTerritoryId, regionFor } from '../shared/plots';
+import {
+  isPlotRegion,
+  parseTerritoryId,
+  plotPoint,
+  plotRegionFromId,
+  regionFor,
+} from '../shared/plots';
 import { gridPoint } from '../shared/geography';
 import { placeName } from '../shared/places';
 import { usePlace } from './places';
@@ -437,6 +443,49 @@ export function Footer() {
         <span>© WORLD</span>
       </div>
     </footer>
+  );
+}
+// A plot's real place name when known, otherwise its block name, plus its cell.
+export function PlotName({ id }: { id: string }) {
+  const { t, locale } = useWorld();
+  const parsed = parseTerritoryId(id);
+  const region = parsed && plotRegionFromId(parsed.region);
+  const place = usePlace(region ? plotPoint(region, parsed.x + 0.5, parsed.y + 0.5) : null);
+  if (!parsed) return <>{id}</>;
+  return (
+    <>
+      {place ? placeName(place.place, locale, true) : t(parsed.region as TextKey)} · {parsed.x}-
+      {parsed.y}
+    </>
+  );
+}
+export function LandNotices() {
+  const { t, notices, dismissNotices } = useWorld();
+  if (!notices.length) return null;
+  return (
+    <aside className="land-notices" role="status">
+      <div>
+        <strong>{t('landNoticeTitle')}</strong>
+        {notices.map((notice) => (
+          <p key={notice.id}>
+            <Link className="text-link" to={`/territory/${notice.territory_id}`}>
+              <PlotName id={notice.territory_id} />
+            </Link>{' '}
+            {t(notice.kind === 'buyout' ? 'landNoticeBuyout' : 'landNoticeSold', {
+              name: notice.other_name || t('formerSettler'),
+              gold: notice.price_gold - notice.tax_gold,
+            })}
+          </p>
+        ))}
+      </div>
+      <button
+        className="icon-button"
+        aria-label={t('dismiss')}
+        onClick={() => void dismissNotices()}
+      >
+        <X size={16} />
+      </button>
+    </aside>
   );
 }
 export function Toast() {

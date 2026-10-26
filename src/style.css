@@ -3749,3 +3749,51 @@ body:has(.map-first) .footer {
     right: calc(min(310px, 46%) + 20px);
   }
 }
+
+.plot-owner {
+  pointer-events: none;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  font-weight: 600;
+  fill: #1f3a2b;
+  paint-order: stroke;
+  stroke: #ffffffd9;
+  stroke-width: 3px;
+}
+.land-record {
+  margin: 16px 0;
+  font-size: 11px;
+}
+.land-record p {
+  margin: 6px 0;
+}
+.land-record ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.land-record li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.land-record small {
+  color: #8c967e;
+  white-space: nowrap;
+}
+.land-notices {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid #e3c79b;
+  border-radius: 6px;
+  background: #fbf3e4;
+  font-size: 12px;
+}
+.land-notices p {
+  margin: 4px 0 0;
+}
