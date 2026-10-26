@@ -1,4 +1,5 @@
 import { test, expect, type Locator, type Page } from '@playwright/test';
+import { plotAt } from '../../shared/plots';
 
 test.beforeEach(async ({ page, isMobile }) => {
   test.skip(!isMobile, 'Touch interaction and mobile viewport checks');
@@ -44,8 +45,8 @@ for (const viewport of [
     await page.getByLabel('Longitude', { exact: true }).fill('127');
     await page.getByLabel('Latitude', { exact: true }).fill('37.5');
     await expect(page.getByLabel('Longitude', { exact: true })).toHaveCSS('font-size', '16px');
-    await page.getByRole('button', { name: 'Explore a world tile', exact: true }).tap();
-    await expect(page).toHaveURL('/region/earth2:873:725');
+    await page.getByRole('button', { name: 'Go to this location', exact: true }).tap();
+    await expect(page).toHaveURL(/\/territory\/s1:z14:\d+:\d+:\d:\d$/);
     await page.locator('.coordinate-search > summary').tap();
     await page.locator('.map-tools > summary').tap();
     await expect(page.locator('.coordinate-search')).not.toHaveAttribute('open');
@@ -74,7 +75,7 @@ for (const viewport of [
 
 test('touch signup, territory claim, construction and mobile navigation', async ({ page }) => {
   // Keep these settlement writes away from the shared map rendering fixtures.
-  await page.goto('/region/earth2:875:725');
+  await page.goto(`/region/${plotAt(127.7, 37.5).region}`);
   await page.getByRole('button', { name: 'Join the world', exact: true }).tap();
   await page.getByLabel('Settler name').fill(`Touch ${Date.now().toString(36)}`);
   await page.getByRole('checkbox').check();

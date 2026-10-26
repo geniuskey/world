@@ -12,8 +12,8 @@ const option = (name, fallback) => {
   return index < 0 ? fallback : args[index + 1];
 };
 const regionId = option('--region');
-if (!regionId || !regionId.startsWith('earth2:'))
-  throw Error('Specify a world tile: --region earth2:x:y --country ISO3');
+if (!regionId || !/^z14:\d+:\d+$/.test(regionId))
+  throw Error('Specify a plot region: --region z14:x:y --country ISO3');
 const country = option('--country', '').toUpperCase();
 const year = Number(option('--year', '2020'));
 if (!/^[A-Z]{3}$/.test(country) || !Number.isInteger(year) || year < 2000 || year > 2020)

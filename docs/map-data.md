@@ -2,13 +2,11 @@
 
 The interactive map uses MapLibre GL JS with a custom, muted vector basemap served by OpenFreeMap using OpenStreetMap data. Users can explore the whole world, recognize coastlines, lakes, major rivers, administrative boundaries, highways, railways and place names from countries down to neighbourhoods and villages, and switch between Mercator (2D map) and globe (3D Earth) projections. Every location uses the same global grid. Selecting a world cell opens a local settlement grid; plots are allocated on first settlement. No city receives a preset pin, starter menu entry or special region configuration.
 
-## Geographic grid v1
+## Plot grid
 
-Each selected world cell anchors an on-demand 8×8 local settlement grid. Cells run east along x and south along y, aligned in Web Mercator, scaled to approximately 250 m per cell at the region's center latitude. Archived pilot plots retain their IDs, ownership and history but are excluded from new settlement. `shared/geography.ts` is the shared forward/inverse mapping. The selected tile shows its center coordinates and an OpenStreetMap link.
+Plots are standard Web Mercator zoom-17 tiles, so a plot is the same `17/x/y` tile any slippy map uses for that place: about 306 m at the equator, 240 m in Korea, and narrower towards the poles. A region is the zoom-14 tile containing an 8×8 block of plots (`z14:x:y`). `shared/plots.ts` converts coordinates to plots and back; `shared/geography.ts` routes plot regions through it. Every point on Earth up to ±85.05° latitude has a plot, IDs come from coordinates, and rows are allocated only when a region is first settled or claimed. Clicking anywhere on the map opens that plot; coordinate search opens the plot at the coordinates; place search opens the plot at an area's interior label point.
 
-This is a geographic reference for game territory, not a surveyed or cadastral boundary. Resource terrain (meadow, forest, mountain, water) is the existing deterministic game data; it does not describe real land cover. A game water cell and a real river may differ. Neither the map nor the overlay confers real property rights. Changing geographic grid v1 later requires an explicit version/migration decision so owned territory does not silently move.
-
-The backdrop uses muted land/water colors, warm highway lines and dashed railways. Province, district and local administrative boundaries and progressively smaller place names appear as users zoom in. Regional views start at zoom 14, where the default tile service supplies Korean district and neighbourhood names. Local names remain visible at territory scale; language-specific names fall back to the original local name. Coverage of Korean 시·도, 구, 동 and villages follows the OpenStreetMap features available in the vector tiles, so missing names or boundaries are not inferred. Buildings and businesses are omitted. The regional reference grid repeats across the entire viewport, aligned with the selected settlement, and follows panning and zooming beyond its 8×8 footprint. These extended lines do not allocate additional territories. At low zoom, grid lines are grouped to stay legible. World and unoccupied settlement grids appear within a softly fading 160 px radius of the pointer and disappear on pointer exit or touch release. Selected and owned settlement plots remain visible, and keyboard focus reveals individual plots. `src/mapStyle.ts` defines the local style; 2D/globe switching and geographic territory coordinates are preserved.
+This is a geographic reference for game territory, not a surveyed or cadastral boundary. Resource terrain (meadow, forest, mountain, water) is still deterministic game data and does not describe real land cover; a game plot can sit on a real river. Neither the map nor the overlay confers real property rights. Version 1 regions (`earth2:*` world tiles with a 250 m grid around their centre) are archived; their plots keep their IDs, owners and history and still render with the version 1 grid. The world-tile overview remains a zoomed-out display only.
 
 ## Exploration tools
 
@@ -48,7 +46,7 @@ With the local development server running, migrate and import explicitly:
 
 ```sh
 npm run db:migrate
-npm run population:import -- --region earth2:873:725 --country KOR --apply
+npm run population:import -- --region z14:13970:6344 --country KOR --apply
 # A selected global region can also be imported using its ID and the covering ISO3 country.
 # To review SQL without changing the local DB, omit --apply.
 # To use an already downloaded copy of the same source raster, add --raster /path/to/file.tif.

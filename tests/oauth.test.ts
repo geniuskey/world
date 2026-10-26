@@ -89,7 +89,7 @@ async function begin() {
     headers: { Origin: origin, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       display_name: 'OAuth Settler',
-      region_id: 'earth2:200:600',
+      region_id: 'z14:2000:6000',
       locale: 'en',
       accept_rules: true,
     }),

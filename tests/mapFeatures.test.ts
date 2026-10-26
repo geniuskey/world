@@ -5,29 +5,16 @@ import {
   readBookmarks,
   readMapLayers,
   regionLandmarks,
-  searchWorldRegions,
 } from '../shared/mapFeatures';
-import { rootTile, worldTileName } from '../shared/worldGrid';
 import { virtualTerritories } from '../worker/world';
 
 describe('map exploration tools', () => {
-  it('finds roots and subdivisions by full names and lossless codes in both languages', () => {
-    for (const locale of ['en', 'ko']) {
-      const tile = rootTile(873, 725);
-      expect(searchWorldRegions(worldTileName(tile, locale), locale)).toEqual([tile]);
-      expect(searchWorldRegions('873-725/1/4', locale)[0].id).toBe('earth2:873:725:0:3');
-      expect(searchWorldRegions('earth2:873:725', locale)).toEqual([tile]);
-      expect(searchWorldRegions(worldTileName(tile, locale).split(' · ')[0], locale)).toHaveLength(
-        16,
-      );
-    }
-    expect(searchWorldRegions('   ', 'en')).toEqual([]);
-    expect(searchWorldRegions('x'.repeat(161), 'en')).toEqual([]);
-  });
   it('validates persisted settings and removes duplicate or malformed bookmarks', () => {
-    expect(readBookmarks('["earth2:2:3","earth2:2:3","bad",null,"earth2:1024:3"]')).toEqual([
-      'earth2:2:3',
-    ]);
+    expect(
+      readBookmarks(
+        '["z14:13970:6344","z14:13970:6344","earth2:2:3","bad",null,"z14:16384:0","earth2:1024:3"]',
+      ),
+    ).toEqual(['z14:13970:6344', 'earth2:2:3']);
     expect(readBookmarks('invalid')).toEqual([]);
     expect(readBookmarks('{}')).toEqual([]);
     expect(readMapLayers('{"resources":"iron","population":true,"ownership":false}')).toMatchObject(

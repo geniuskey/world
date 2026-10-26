@@ -1,4 +1,6 @@
-import { rootTile, worldTileFromId } from '../shared/worldGrid';
+import { worldTileFromId } from '../shared/worldGrid';
+import { plotAt, plotRegionId, plotTerritoryId, regionFor } from '../shared/plots';
+import { gridPoint } from '../shared/geography';
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import { build } from 'esbuild';
 import { Miniflare, Log, LogLevel, convertV4MiniflareOptions } from 'miniflare';
@@ -198,9 +200,9 @@ afterAll(async () => {
 describe('free world and authentication', () => {
   it('excludes archived pilot cities from exploration and rejects new settlement there', async () => {
     const regions = await request('/regions');
-    expect(regions.body.regions.every((r: { id: string }) => r.id.startsWith('earth2:'))).toBe(
-      true,
-    );
+    expect(
+      regions.body.regions.some((r: { id: string }) => ['han', 'tagus', 'lakes'].includes(r.id)),
+    ).toBe(false);
     const login = await request('/auth/dev', {
       display_name: 'No preset city',
       region_id: 'han',
@@ -686,7 +688,7 @@ describe('operations and season boundaries', () => {
       ).toBe(0);
       expect((await request('/me/state', undefined, a.cookie)).body.error.code).toBe('NOT_JOINED');
       expect(
-        (await request('/join', { region_id: 'earth2:873:725', accept_rules: true }, a.cookie))
+        (await request('/join', { region_id: 'z14:13970:6345', accept_rules: true }, a.cookie))
           .status,
       ).toBe(200);
       const next = await state(a);
@@ -708,84 +710,109 @@ describe('operations and season boundaries', () => {
   });
 });
 
-describe('world settlement zones', () => {
-  it('previews unallocated global zones without creating territory rows', async () => {
-    const allocatedBefore = await db.prepare('SELECT COUNT(*) AS n FROM world_tiles').first('n');
+describe('global plot grid', () => {
+  it('previews unallocated plot regions without creating rows', async () => {
     const regions = await request('/regions', undefined, '', {
       headers: { 'cache-control': 'no-cache' },
     });
     expect(regions.body.regions.length).toBeLessThanOrEqual(128);
     const overview = await request('/world/tiles');
-    expect(overview.body.total_tiles).toBe(1_048_576);
     expect(overview.body.tiles.length).toBeLessThanOrEqual(2048);
-    expect(overview.body.stride).toBeGreaterThan(1);
-    expect(await db.prepare('SELECT COUNT(*) AS n FROM world_tiles').first('n')).toBe(
-      allocatedBefore,
-    );
-    const virtualRegion = await request('/regions/earth2:873:725');
+    const region = plotAt(-58.38, -34.6).region;
+    const virtualRegion = await request(`/regions/${region}`);
     expect(virtualRegion.status).toBe(200);
-    expect(virtualRegion.body.region.id).toBe('earth2:873:725');
-    const preview = await request('/map/chunks?region=earth2:0:0&cx=0&cy=0');
+    expect(virtualRegion.body.region.id).toBe(region);
+    const preview = await request(`/map/chunks?region=${region}&cx=0&cy=0`);
     expect(preview.status).toBe(200);
     expect(preview.body.tiles).toHaveLength(64);
     const detail = await request(`/territories/${preview.body.tiles[0].id}`);
     expect(detail.body.territory).toEqual(preview.body.tiles[0]);
     expect(
       await db
-        .prepare("SELECT COUNT(*) AS n FROM territories WHERE region_id='earth2:0:0'")
+        .prepare('SELECT COUNT(*) AS n FROM territories WHERE region_id=?')
+        .bind(region)
         .first('n'),
     ).toBe(0);
-    expect((await request('/map/chunks?region=earth2:0:0&cx=1&cy=0')).status).toBe(404);
-    expect(await db.prepare('SELECT COUNT(*) AS n FROM world_tiles').first('n')).toBe(
-      allocatedBefore,
-    );
+    expect((await request(`/map/chunks?region=${region}&cx=1&cy=0`)).status).toBe(404);
+    // Version 1 world tiles are no longer settlement regions.
+    expect((await request('/regions/earth2:873:725')).status).toBe(404);
   });
-  it('splits populated zones, preserves existing assets and routes stale selections into children', async () => {
-    const region = 'earth2:800:700';
-    const first = await actor(undefined, region);
-    const home = first.state.territories[0].id;
+  it('settles the chosen plot and maps it to its real coordinates', async () => {
+    const home = plotAt(127.0276, 37.4979);
+    const id = plotTerritoryId('s1', home);
+    const login = await request('/auth/dev', {
+      display_name: 'Gangnam Settler',
+      region_id: home.region,
+      territory_id: id,
+      locale: 'en',
+      accept_rules: true,
+    });
+    expect(login.status, JSON.stringify(login.body)).toBe(200);
+    const cookie = login.headers.get('set-cookie')!.split(';')[0];
+    const owned = (await request('/me/state', undefined, cookie)).body as PlayerState;
+    expect(owned.territories.map((t) => t.id)).toEqual([id]);
+    expect([owned.territories[0].gx, owned.territories[0].gy]).toEqual([home.gx, home.gy]);
+    const [west, north] = gridPoint(regionFor(home.region, 's1')!, home.x, home.y);
+    const [east, south] = gridPoint(regionFor(home.region, 's1')!, home.x + 1, home.y + 1);
+    expect(west).toBeLessThanOrEqual(127.0276);
+    expect(east).toBeGreaterThan(127.0276);
+    expect(south).toBeLessThanOrEqual(37.4979);
+    expect(north).toBeGreaterThan(37.4979);
+    const rival = await request('/auth/dev', {
+      display_name: 'Gangnam Rival',
+      region_id: home.region,
+      territory_id: id,
+      locale: 'en',
+      accept_rules: true,
+    });
+    expect(rival.body.error.code).toBe('TERRITORY_UNAVAILABLE');
+    const elsewhere = await request('/auth/dev', {
+      display_name: 'Region Mismatch',
+      region_id: plotAt(126.97, 37.57).region,
+      territory_id: id,
+      locale: 'en',
+      accept_rules: true,
+    });
+    expect(elsewhere.body.error.code).toBe('TERRITORY_UNAVAILABLE');
+  });
+  it('grows across region edges and allocates the next region on demand', async () => {
+    const start = plotAt(139.69, 35.68);
+    const edge = { ...start, gx: start.gx - start.x + 7, x: 7 };
+    const login = await request('/auth/dev', {
+      display_name: 'Edge Walker',
+      region_id: edge.region,
+      territory_id: plotTerritoryId('s1', edge),
+      locale: 'en',
+      accept_rules: true,
+    });
+    expect(login.status, JSON.stringify(login.body)).toBe(200);
+    const a: Actor = {
+      cookie: login.headers.get('set-cookie')!.split(';')[0],
+      id: '',
+      state: {} as PlayerState,
+    };
+    const [rx, ry] = edge.region.split(':').slice(1).map(Number);
+    const next = plotRegionId(rx + 1, ry);
     expect(
-      (
-        await request(
-          '/structures/build',
-          { territory_id: home, idempotency_key: uuid() },
-          first.cookie,
-        )
-      ).status,
-    ).toBe(200);
-    const before = await state(first);
-    for (let i = 1; i < 8; i++) await actor(undefined, region);
-    const bounds = rootTile(800, 700);
-    const zones = await request(
-      `/world/tiles?bbox=${bounds.west},${bounds.south},${bounds.east},${bounds.north}`,
-      undefined,
-      '',
-      {
-        headers: { 'cache-control': 'no-cache' },
-      },
+      await db
+        .prepare('SELECT COUNT(*) AS n FROM territories WHERE region_id=?')
+        .bind(next)
+        .first('n'),
+    ).toBe(0);
+    expect((await claim(a, `s1:${next}:1:${edge.y}`)).body.error.code).toBe('NOT_ADJACENT');
+    expect((await claim(a, `s1:${next}:0:${(edge.y + 1) % 8}`)).body.error.code).toBe(
+      'NOT_ADJACENT',
     );
-    expect((await request(`/regions/${region}`)).body.region.world_split).toBe(1);
-    expect(zones.body.total_tiles).toBe(1_048_579);
+    const across = await claim(a, `s1:${next}:0:${edge.y}`);
+    expect(across.status, JSON.stringify(across.body)).toBe(200);
+    const owned = (await request('/me/state', undefined, a.cookie)).body as PlayerState;
+    expect(owned.territories.map((t) => t.region_id).sort()).toEqual([edge.region, next].sort());
     expect(
-      zones.body.tiles.filter((t: { parent_id: string }) => t.parent_id === region),
-    ).toHaveLength(4);
-    const next = await actor(undefined, region);
-    expect(next.state.territories[0].region_id).toBe(`${region}:0`);
-    const after = await state(first);
-    expect(after.territories).toEqual(before.territories);
-    expect(after.gold_balance).toBe(before.gold_balance);
-    expect(after.resources).toEqual(before.resources);
-    expect(after.production).toEqual(before.production);
-    const target = `${after.season.id}:${region}:1:0`;
-    expect((await claim(first, target)).status).toBe(200);
-    // Independent requests cannot duplicate children or allocate the same starter.
-    const concurrent = await Promise.all([actor(undefined, region), actor(undefined, region)]);
-    expect(new Set(concurrent.map((a) => a.state.territories[0].id)).size).toBe(2);
-    const count = await db
-      .prepare('SELECT COUNT(*) AS n FROM world_tiles WHERE parent_id=? AND season_id=?')
-      .bind(region, after.season.id)
-      .first('n');
-    expect(count).toBe(4);
+      await db
+        .prepare('SELECT COUNT(*) AS n FROM territories WHERE region_id=?')
+        .bind(next)
+        .first('n'),
+    ).toBe(64);
   });
 });
 
@@ -799,13 +826,13 @@ describe('bounded million-tile view API', () => {
     for (const bbox of ['1,2,0,3', '0,-91,1,1', '0,0,361,1', 'NaN,0,1,1', '0,0,1'])
       expect((await request(`/world/tiles?bbox=${bbox}`)).status).toBe(400);
     expect((await request('/regions/earth2:1024:0')).status).toBe(404);
-    expect((await request('/regions/earth2:0:0:0')).status).toBe(404);
+    expect((await request('/regions/z14:16384:0')).status).toBe(404);
   });
 });
 
 describe('public map overlays', () => {
   it('returns actual regional settlement, claim and construction events without action payloads', async () => {
-    const region = 'earth2:912:612';
+    const region = plotRegionId(9120, 6120);
     const explorer = await actor('Map Activity Explorer', region);
     const home = explorer.state.territories[0];
     const target = `${home.season_id}:${region}:1:0`;
@@ -835,7 +862,9 @@ describe('public map overlays', () => {
       expect(entry).not.toHaveProperty('payload_json');
       expect(entry).not.toHaveProperty('user_id');
     }
-    expect((await request('/map/activity?region=earth2:911:612')).body.activities).toEqual([]);
+    expect(
+      (await request(`/map/activity?region=${plotRegionId(9119, 6120)}`)).body.activities,
+    ).toEqual([]);
     expect((await request('/map/activity')).body.activities.length).toBeLessThanOrEqual(30);
     await db.prepare("UPDATE users SET status='blocked' WHERE id=?").bind(explorer.id).run();
     expect(
@@ -847,7 +876,7 @@ describe('public map overlays', () => {
     ).toEqual([]);
   });
   it('returns imported population for virtual plots and leaves unknown plots absent', async () => {
-    const region = 'earth2:913:613';
+    const region = plotRegionId(9130, 6130);
     const territory = `s1:${region}:2:3`;
     await db
       .prepare('INSERT INTO territory_population VALUES(?,?,?,?,?,?)')
@@ -863,7 +892,9 @@ describe('public map overlays', () => {
         source: 'https://example.com/population',
       },
     ]);
-    expect((await request('/map/population?region=earth2:914:613')).body.samples).toEqual([]);
+    expect(
+      (await request(`/map/population?region=${plotRegionId(9140, 6130)}`)).body.samples,
+    ).toEqual([]);
     expect((await request('/map/population?region=earth2:1024:0')).status).toBe(404);
     expect((await request('/map/population')).status).toBe(400);
   });

@@ -8,18 +8,12 @@ import { Focus, Globe2, Map as MapIcon, Minus, Plus } from 'lucide-react';
 import { useWorld } from './state';
 import { api } from './api';
 import { CHUNK_SIZE, type Region, type Territory } from '../shared/game';
-import {
-  worldTileAt,
-  worldTileName,
-  worldTileFromId,
-  worldTilesForView,
-  WORLD_INITIAL_TILES,
-  type WorldTile,
-} from '../shared/worldGrid';
+import { worldTilesForView, WORLD_INITIAL_TILES, type WorldTile } from '../shared/worldGrid';
+import { plotAt, plotTerritoryId } from '../shared/plots';
 import { coordinates, gridCell, gridPoint } from '../shared/geography';
 import type { TextKey } from './i18n';
 import { gameMapStyle, placeName as placeLabel, placeLabelLayers } from './mapStyle';
-import { placeAt } from './places';
+import { placeAt, usePlace } from './places';
 import { placeName } from '../shared/places';
 import { MapTools, useMapActivity } from './MapTools';
 import { MapOverlays } from './MapOverlays';
@@ -112,7 +106,7 @@ export function Atlas({
     return () => window.removeEventListener('keydown', exit);
   }, [measuring]);
   const [location, setLocation] = useState<{
-    zone: WorldTile;
+    region: string;
     point: [number, number];
     cell?: { x: number; y: number };
   } | null>(null);
@@ -140,8 +134,6 @@ export function Atlas({
   const [zonesError, setZonesError] = useState(false);
   const [zoneBounds, setZoneBounds] = useState('-180,-90,180,90');
   const [zoneTotal, setZoneTotal] = useState(WORLD_INITIAL_TILES);
-  const zoneRef = useRef(zones);
-  zoneRef.current = zones;
   const [tiles, setTiles] = useState<Territory[]>([]);
   const [loading, setLoading] = useState(false);
   const [tileError, setTileError] = useState(false);
@@ -154,12 +146,12 @@ export function Atlas({
       const point = gridPoint(region, tile.x + 0.5, tile.y + 0.5);
       mapRef.current?.jumpTo({ center: point, zoom: 15 });
       onSelect(tile);
-      const zone = worldTileFromId(region.id);
-      if (zone) setLocation({ zone, point, cell: tile });
+      setLocation({ region: region.id, point, cell: tile });
     },
     [region, onSelect],
   );
   const home = state?.territories.find((tile) => tile.region_id === region?.id);
+  const regionPlace = usePlace(region ? [region.longitude, region.latitude] : null);
   const reset = () => {
     const map = mapRef.current;
     if (!map) return;
@@ -269,10 +261,11 @@ export function Atlas({
         setMeasurePoints((points) => (points.length >= 2 ? [[lng, lat]] : [...points, [lng, lat]]));
         return;
       }
-      const zone = worldTileAt(lng, lat, zoneRef.current);
+      // Every point on Earth is a plot; clicks outside the open region open that plot.
+      const plot = plotAt(lng, lat);
       if (!active || map.getZoom() < 9) {
-        if (zone.id === active?.id) setLocation({ zone, point: [lng, lat] });
-        else navigate(`/region/${zone.id}`);
+        if (plot.region === active?.id) setLocation({ region: active.id, point: [lng, lat] });
+        else navigate(`/region/${plot.region}`);
         return;
       }
       const longitude = lng + Math.round((active.longitude - lng) / 360) * 360;
@@ -280,9 +273,10 @@ export function Atlas({
       const tile = visible.find((tile) => tile.x === cell.x && tile.y === cell.y);
       if (tile) {
         select(tile);
-        setLocation({ zone: worldTileFromId(active.id) ?? zone, point: [lng, lat], cell });
-      } else if (zone.id !== active.id) navigate(`/region/${zone.id}`);
-      else setLocation({ zone, point: [lng, lat] });
+        setLocation({ region: active.id, point: [lng, lat], cell });
+      } else if (plot.region !== active.id)
+        navigate(`/territory/${plotTerritoryId(active.season_id, plot)}`);
+      else setLocation({ region: active.id, point: [lng, lat] });
     });
     const observer = new ResizeObserver(() => map.resize());
     observer.observe(container.current);
@@ -297,12 +291,21 @@ export function Atlas({
       mapRef.current = null;
       map.remove();
     };
-  }, [region?.id, retry]);
+    // Region changes move the camera instead of recreating the map (see below).
+  }, [retry]);
+  // Move only when the new region is out of view, so walking across a region edge keeps
+  // the camera where it is.
+  const moveTo = useCallback((point: [number, number]) => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (map.getZoom() < 12 || !map.getBounds().contains(point))
+      map.jumpTo({ center: point, zoom: Math.max(14, map.getZoom()) });
+  }, []);
   useEffect(() => {
     const map = mapRef.current;
     if (!ready || !map || !location) return;
     const title = document.createElement('strong');
-    title.textContent = `${worldTileName(location.zone, locale)}${location.cell ? ` · ${location.cell.x + 1}-${location.cell.y + 1}` : ''}`;
+    title.textContent = `${t(location.region as TextKey)}${location.cell ? ` · ${location.cell.x + 1}-${location.cell.y + 1}` : ''}`;
     const point = document.createElement('div');
     point.textContent = coordinates(location.point);
     const content = document.createElement('div');
@@ -361,8 +364,19 @@ export function Atlas({
     if (ready) mapRef.current?.setProjection({ type: globe ? 'globe' : 'mercator' });
   }, [globe, ready]);
   useEffect(() => {
+    if (!ready || !region || focus) return;
+    moveTo(
+      gridPoint(region, (home?.x ?? region.width / 2) + 0.5, (home?.y ?? region.height / 2) + 0.5),
+    );
+  }, [ready, region?.id]);
+  // An explicit focus (a territory link or "Find my land") centres its plot.
+  useEffect(() => {
     if (!ready || !region || !focus) return;
-    mapRef.current?.jumpTo({ center: gridPoint(region, focus.x + 0.5, focus.y + 0.5), zoom: 14 });
+    const map = mapRef.current;
+    map?.jumpTo({
+      center: gridPoint(region, focus.x + 0.5, focus.y + 0.5),
+      zoom: Math.max(14, map.getZoom()),
+    });
   }, [ready, focus, region?.id]);
   useEffect(() => {
     if (!region) return;
@@ -697,7 +711,9 @@ export function Atlas({
       <div className="atlas-label">
         <span className="status-dot" />
         {region
-          ? t(region.id as TextKey)
+          ? regionPlace
+            ? placeName(regionPlace.place, locale, true)
+            : t(region.id as TextKey)
           : t('worldTileCount', {
               count: zoneTotal.toLocaleString(locale === 'ko' ? 'ko-KR' : 'en-US'),
             })}

@@ -21,7 +21,7 @@ if (command === 'reset') {
   await build({
     stdin: {
       contents:
-        "export { rootTileAt,regionForTile } from './shared/worldGrid'; export { virtualTerritories } from './worker/world';",
+        "export { plotAt, plotRegion } from './shared/plots'; export { virtualTerritories } from './worker/world';",
       resolveDir: process.cwd(),
     },
     bundle: true,
@@ -29,7 +29,7 @@ if (command === 'reset') {
     format: 'esm',
     outfile: '.wrangler/demo-grid.mjs',
   });
-  const { rootTileAt, regionForTile, virtualTerritories } = await import(
+  const { plotAt, plotRegion, virtualTerritories } = await import(
     pathToFileURL(resolve('.wrangler/demo-grid.mjs'))
   );
   const sql = [];
@@ -38,22 +38,18 @@ if (command === 'reset') {
     ['Sol', 50, 20, 'wood'],
     ['Jun', -60, -10, 'iron'],
   ]) {
-    const tile = rootTileAt(longitude, latitude),
-      region = tile.id,
-      metadata = regionForTile(tile, '');
+    const region = plotAt(longitude, latitude).region,
+      metadata = plotRegion(region, '');
     const active = "SELECT id FROM seasons WHERE status='active' AND ends_at>unixepoch()";
     sql.push(
-      `INSERT OR IGNORE INTO regions(id,season_id,name,subtitle,longitude,latitude,width,height,land_count) SELECT '${region}',id,'${metadata.name}','World grid',${metadata.longitude},${metadata.latitude},8,8,64 FROM seasons WHERE id IN (${active});`,
-    );
-    sql.push(
-      `INSERT OR IGNORE INTO world_tiles(id,season_id,level,west,south,east,north) SELECT '${region}',id,0,${tile.west},${tile.south},${tile.east},${tile.north} FROM seasons WHERE id IN (${active});`,
+      `INSERT OR IGNORE INTO regions(id,season_id,name,subtitle,longitude,latitude,width,height,land_count) SELECT '${region}',id,'${metadata.name}','${metadata.subtitle}',${metadata.longitude},${metadata.latitude},8,8,64 FROM seasons WHERE id IN (${active});`,
     );
     sql.push(
       `INSERT OR IGNORE INTO chunk_versions SELECT id,'${region}',0,0,1 FROM seasons WHERE id IN (${active});`,
     );
     for (const plot of virtualTerritories('', region))
       sql.push(
-        `INSERT OR IGNORE INTO territories(id,region_id,season_id,x,y,cx,cy,terrain_type,is_starter) SELECT id||':${region}:${plot.x}:${plot.y}','${region}',id,${plot.x},${plot.y},0,0,'${plot.terrain_type}',${plot.is_starter} FROM seasons WHERE id IN (${active});`,
+        `INSERT OR IGNORE INTO territories(id,region_id,season_id,x,y,gx,gy,cx,cy,terrain_type,is_starter) SELECT id||':${region}:${plot.x}:${plot.y}','${region}',id,${plot.x},${plot.y},${plot.gx},${plot.gy},0,0,'${plot.terrain_type}',${plot.is_starter} FROM seasons WHERE id IN (${active});`,
       );
     const user = `demo-world-${name.toLowerCase()}`,
       display = `World Demo ${name}`,

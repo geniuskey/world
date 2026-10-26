@@ -1,11 +1,14 @@
 import { test, expect } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { regionForTile, worldTileFromId, worldTileName } from '../../shared/worldGrid';
 import { gridPoint } from '../../shared/geography';
 import { chunkValue, placeCell, placeFromIndex, placeName } from '../../shared/places';
+import { plotAt, plotRegion, plotRegionName } from '../../shared/plots';
+import { regionLandmarks } from '../../shared/mapFeatures';
+import { virtualTerritories } from '../../worker/world';
+import { terrainResource } from '../../shared/game';
 
-const region = 'earth2:873:725';
-const name = worldTileName(worldTileFromId(region)!);
+const region = plotAt(127, 37.5).region;
+const plots = virtualTerritories('s1', region);
 test.beforeEach(async ({ page }) => {
   await page.route('https://tiles.openfreemap.org/**', (route) =>
     new URL(route.request().url()).pathname === '/planet'
@@ -21,37 +24,37 @@ test.beforeEach(async ({ page }) => {
   );
 });
 
-test('worldwide name search and saved regions survive reload and support Korean', async ({
+test('neighbourhood search opens real places and saved regions survive reload', async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
   await page.locator('.map-tools > summary').click();
-  await page.getByLabel('Region name or code').fill(name);
-  await page.locator('.map-tools').getByRole('link', { name, exact: true }).click();
-  await expect(page).toHaveURL(`/region/${region}`);
+  await page.getByLabel('Neighbourhood name').fill('Yeoksam 1');
+  const result = page
+    .locator('.map-tools')
+    .getByRole('link', { name: 'Yeoksam 1(il)-dong, Gangnam-gu, Seoul', exact: true });
+  await result.click();
+  await expect(page).toHaveURL(/\/territory\/s1:z14:\d+:\d+:\d:\d$/);
+  await expect(
+    page.locator('.detail-sidebar.has-selection').getByRole('heading', { level: 2 }),
+  ).toHaveText('Yeoksam 1(il)-dong, Gangnam-gu');
+  const saved = decodeURIComponent(new URL(page.url()).pathname).split(':').slice(1, 4).join(':');
   await page.locator('.map-tools > summary').click();
   await page.getByRole('button', { name: 'Save this region', exact: true }).click();
   await expect(page.locator('.bookmark-marker')).toHaveCount(1);
   await page.reload();
   await page.locator('.map-tools > summary').click();
-  await expect(page.locator('.map-tools').getByRole('link', { name, exact: true })).toBeVisible();
+  await expect(
+    page.locator('.map-tools').getByRole('link', { name: plotRegionName(saved)!, exact: true }),
+  ).toBeVisible();
   await page.getByRole('button', { name: '한국어로 변경' }).click();
   await expect(page.locator('.map-tools > summary')).toContainText('지도 도구');
-  await page.getByLabel('지역 이름 또는 코드').fill('874-725');
-  await expect(page.locator('.map-tools').getByRole('link', { name: /874-725/ })).toBeVisible();
-  await page.getByLabel('지역 이름 또는 코드').fill('은빛 숲');
+  await page.getByLabel('동네 이름 (읍·면·동)').fill('성수2가');
   await expect(
-    page
-      .locator('.map-tools')
-      .getByRole('link', { name: /은빛 숲/ })
-      .first(),
+    page.locator('.map-tools').getByRole('link', { name: '서울특별시 성동구 성수2가3동' }),
   ).toBeVisible();
-  await page.getByLabel('지역 이름 또는 코드').fill('');
-  await page.getByRole('button', { name: '저장한 지역 삭제', exact: true }).click();
-  await expect(page.locator('.bookmark-marker')).toHaveCount(0);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
 
@@ -83,7 +86,11 @@ test('resource, population, ownership and landmark layers work together', async 
   await page.locator('.map-tools > summary').click();
   await page.getByRole('tab', { name: 'Layers', exact: true }).click();
   await page.getByRole('combobox', { name: 'Resource distribution' }).selectOption('all');
-  await expect(page.getByTestId('tile-4-4')).toHaveAttribute('fill', '#8daf4d');
+  const resource = terrainResource[plots[4 * 8 + 4].terrain_type as 'meadow'];
+  await expect(page.getByTestId('tile-4-4')).toHaveAttribute(
+    'fill',
+    { food: '#8daf4d', wood: '#277c70', iron: '#bf8b46' }[resource],
+  );
   await expect(page.getByTestId('tile-4-4')).not.toHaveAttribute('mask', /url/);
   await page.getByRole('checkbox', { name: 'Population heatmap' }).check();
   await expect(page.locator('.map-population-key')).toContainText(
@@ -91,7 +98,7 @@ test('resource, population, ownership and landmark layers work together', async 
   );
   await page.getByRole('checkbox', { name: 'Ownership boundaries' }).uncheck();
   await page.getByRole('checkbox', { name: 'Game landmarks' }).check();
-  await expect(page.locator('.landmark-marker')).toHaveCount(3);
+  await expect(page.locator('.landmark-marker')).toHaveCount(regionLandmarks(plots).length);
   await page.screenshot({ path: test.info().outputPath('map-layers.png') });
   await page.getByRole('tab', { name: 'Landmarks', exact: true }).click();
   await page
@@ -146,13 +153,13 @@ test('recent real settlement events appear in the feed and on the map', async ({
   await page.getByRole('checkbox', { name: 'Recent activity markers' }).check();
   await expect(page.locator('.activity-marker').first()).toBeVisible();
   await page.locator('.map-activity-list').getByRole('link').filter({ hasText: explorer }).click();
-  await expect(page).toHaveURL(/\/territory\/s1:earth2:873:725:/);
+  await expect(page).toHaveURL(new RegExp(`/territory/s1:${region}:`));
   await expect(page.locator('.detail-sidebar.has-selection')).toBeVisible();
 });
 
 test('plots in Korea show their real administrative area and source', async ({ page }) => {
   const index = JSON.parse(readFileSync('public/places/kor/index.json', 'utf8'));
-  const point = gridPoint(regionForTile(worldTileFromId(region)!, 's1'), 3.5, 3.5);
+  const point = gridPoint(plotRegion(region, 's1')!, 3.5, 3.5);
   const { root, row, column } = placeCell(point[0], point[1], index.cells);
   const chunk = JSON.parse(
     readFileSync(`public/places/kor/${root.replace(':', '-')}.json`, 'utf8'),

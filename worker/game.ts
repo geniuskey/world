@@ -1,4 +1,4 @@
-import { prepareSettlement, splitTile, worldTile } from './world';
+import { prepareSettlement } from './world';
 import { ApiError } from './types';
 import type { Db } from './db';
 import {
@@ -75,7 +75,7 @@ export async function command(
   );
   return { action_id: actionId, result: JSON.parse(action!.result_json), replayed: false };
 }
-export async function join(db: Db, user: string, region: string, now: number, autoSplit = false) {
+export async function join(db: Db, user: string, region: string, now: number, territory?: string) {
   const season = await currentSeason(db);
   const existing = await db.first(
     'SELECT user_id FROM player_state WHERE user_id=? AND season_id=?',
@@ -84,10 +84,16 @@ export async function join(db: Db, user: string, region: string, now: number, au
   );
   if (!existing) {
     if (now < season.begins_at || now >= season.ends_at) throw new ApiError('SEASON_ENDED', 409);
-    const target = await prepareSettlement(db, season.id, region, autoSplit);
-    await command(db, user, season.id, 'join', { region_id: target }, `join:${season.id}`, now);
-    const tile = await worldTile(db, season.id, target);
-    if (tile && autoSplit) await splitTile(db, season.id, tile);
+    const target = await prepareSettlement(db, season.id, region);
+    await command(
+      db,
+      user,
+      season.id,
+      'join',
+      territory ? { region_id: target, territory_id: territory } : { region_id: target },
+      `join:${season.id}`,
+      now,
+    );
   }
 }
 export async function playerState(db: Db, user: Player, now: number): Promise<PlayerState> {

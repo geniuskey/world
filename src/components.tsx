@@ -18,7 +18,10 @@ import {
 import { useWorld } from './state';
 import { api, post } from './api';
 import type { TextKey } from './i18n';
-import { worldTileFromId } from '../shared/worldGrid';
+import { isPlotRegion, parseTerritoryId, regionFor } from '../shared/plots';
+import { gridPoint } from '../shared/geography';
+import { placeName } from '../shared/places';
+import { usePlace } from './places';
 import { isPermanent, type ResourceKind } from '../shared/game';
 
 export const resourceIcon = { food: Wheat, wood: TreePine, iron: Mountain };
@@ -241,7 +244,22 @@ export function AuthModal() {
   const { t, locale, config, refresh, setAuthOpen, user, message } = useWorld();
   const navigate = useNavigate();
   const location = useLocation();
-  const region = decodeURIComponent(location.pathname.match(/^\/region\/(.+)$/)?.[1] || '');
+  // Settle the selected plot on a territory page, or the first open starter of a region.
+  const territory = parseTerritoryId(
+    decodeURIComponent(location.pathname.match(/^\/territory\/(.+)$/)?.[1] || ''),
+  );
+  const chosen =
+    territory && isPlotRegion(territory.region)
+      ? `${territory.season}:${territory.region}:${territory.x}:${territory.y}`
+      : undefined;
+  const region =
+    (chosen && territory?.region) ||
+    decodeURIComponent(location.pathname.match(/^\/region\/(.+)$/)?.[1] || '');
+  const place = { region_id: region, ...(chosen ? { territory_id: chosen } : {}) };
+  const startRegion = config ? regionFor(region, config.season.id) : null;
+  const startPlace = usePlace(
+    startRegion && gridPoint(startRegion, (territory?.x ?? 3.5) + 0.5, (territory?.y ?? 3.5) + 0.5),
+  );
   const [name, setName] = useState(''),
     [accepted, setAccepted] = useState(false),
     [busy, setBusy] = useState(false),
@@ -252,11 +270,11 @@ export function AuthModal() {
     setBusy(true);
     setError('');
     try {
-      if (user) await post('/join', { region_id: region, accept_rules: accepted });
+      if (user) await post('/join', { ...place, accept_rules: accepted });
       else if (provider === 'google') {
         const result = await post<{ url: string }>('/auth/google', {
           display_name: name,
-          region_id: region,
+          ...place,
           locale,
           accept_rules: accepted,
         });
@@ -265,7 +283,7 @@ export function AuthModal() {
       } else
         await post('/auth/dev', {
           display_name: name,
-          region_id: region,
+          ...place,
           locale,
           accept_rules: accepted,
         });
@@ -275,14 +293,16 @@ export function AuthModal() {
         fresh: true,
       });
       close();
-      navigate(`/region/${settled.territories[0]?.region_id || region}`);
+      navigate(
+        chosen ? `/territory/${chosen}` : `/region/${settled.territories[0]?.region_id || region}`,
+      );
     } catch (e) {
       setError(message(e));
     } finally {
       setBusy(false);
     }
   };
-  if (!worldTileFromId(region))
+  if (!isPlotRegion(region))
     return (
       <Modal title={t('chooseOnMap')} onClose={close}>
         <p>{t('chooseOnMapBody')}</p>
@@ -317,8 +337,11 @@ export function AuthModal() {
           </label>
         )}
         <label>
-          {t('startRegion')}
-          <input readOnly value={t(region as TextKey)} />
+          {t(chosen ? 'startPlot' : 'startRegion')}
+          <input
+            readOnly
+            value={`${startPlace ? placeName(startPlace.place, locale) : t(region as TextKey)}${territory && chosen ? ` · ${territory.x + 1}-${territory.y + 1}` : ''}`}
+          />
           <input type="hidden" name="region_id" value={region} />
         </label>
         <label className="checkbox">

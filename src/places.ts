@@ -3,6 +3,7 @@ import {
   chunkValue,
   placeCell,
   placeDatasetAt,
+  placeDatasets,
   placeFromIndex,
   type Place,
   type PlaceChunk,
@@ -29,6 +30,11 @@ const cached = <T>(cache: Map<string, Promise<T>>, url: string) => {
   return cache.get(url)!;
 };
 
+export function loadPlaceIndex(country: string) {
+  const dataset = placeDatasets.find((item) => item.country === country);
+  if (!dataset) return Promise.reject(Error(`No place data for ${country}`));
+  return cached(indexes, `${dataset.path}/index.json`);
+}
 export type PlaceLookup = { place: Place; index: PlaceIndex };
 export async function placeAt(longitude: number, latitude: number): Promise<PlaceLookup | null> {
   const dataset = placeDatasetAt(longitude, latitude);

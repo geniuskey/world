@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { api, ApiFailure, post } from './api';
 import { worldTileName, worldTileFromId } from '../shared/worldGrid';
+import { plotRegionName } from '../shared/plots';
 import { en, ko, type TextKey } from './i18n';
 import {
   POLL_MS,
@@ -28,6 +29,7 @@ function useWorldState() {
       const tile = worldTileFromId(key);
       let text: string =
         (locale === 'ko' ? ko : en)[key] ??
+        plotRegionName(key, locale) ??
         (tile ? worldTileName(tile, locale) : undefined) ??
         regions.find((r) => r.id === key)?.name ??
         key;

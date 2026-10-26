@@ -42,6 +42,9 @@ export type Territory = {
   season_id: string;
   x: number;
   y: number;
+  // Global zoom-17 plot coordinates; null for archived version 1 plots.
+  gx?: number | null;
+  gy?: number | null;
   cx: number;
   cy: number;
   terrain_type: Terrain;

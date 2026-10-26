@@ -5,7 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { useWorld } from './state';
 import { gridPoint } from '../shared/geography';
 import type { Region, Territory } from '../shared/game';
-import { regionForTile, worldTileFromId, worldTileName } from '../shared/worldGrid';
+import { regionFor } from '../shared/plots';
+import type { TextKey } from './i18n';
 import {
   measurementPath,
   regionLandmarks,
@@ -167,11 +168,11 @@ export function MapOverlays({
       markers.push(new Marker({ element: button }).setLngLat(point).addTo(map));
     };
     for (const id of bookmarks) {
-      const zone = worldTileFromId(id);
-      if (zone)
+      const saved = regionFor(id, '');
+      if (saved)
         addMarker(
-          [(zone.west + zone.east) / 2, (zone.south + zone.north) / 2],
-          `${t('mapBookmarks')}: ${worldTileName(zone, locale)}`,
+          [saved.longitude, saved.latitude],
+          `${t('mapBookmarks')}: ${t(id as TextKey)}`,
           '★',
           'bookmark-marker',
           () => navigate(`/region/${id}`),
@@ -192,9 +193,8 @@ export function MapOverlays({
       for (const activity of activities) {
         if (seen.has(activity.territory_id)) continue;
         seen.add(activity.territory_id);
-        const zone = worldTileFromId(activity.region_id);
-        if (!zone) continue;
-        const target = regionForTile(zone, '');
+        const target = regionFor(activity.region_id, '');
+        if (!target) continue;
         addMarker(
           gridPoint(target, activity.x + 0.5, activity.y + 0.5),
           `${t(activityKeys[activity.type])} · ${activity.actor_name}`,

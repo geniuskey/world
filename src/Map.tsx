@@ -24,12 +24,8 @@ import { usePlace } from './places';
 import { placeName } from '../shared/places';
 import { api, mutate, post } from './api';
 import { Empty, Modal, Resource } from './components';
-import {
-  rootTileAt,
-  worldTileFromId,
-  regionForTile,
-  WORLD_INITIAL_TILES,
-} from '../shared/worldGrid';
+import { worldTileFromId, WORLD_INITIAL_TILES } from '../shared/worldGrid';
+import { parseTerritoryId, plotAt, plotTerritoryId, regionFor } from '../shared/plots';
 import { terrainResource, type Region, type Territory } from '../shared/game';
 import type { TextKey } from './i18n';
 
@@ -43,15 +39,27 @@ export function MapPage() {
     [focus, setFocus] = useState<{ x: number; y: number } | null>(null),
     [reportOpen, setReportOpen] = useState(false),
     [reason, setReason] = useState('');
-  const requestedRegion = regionId || tile?.region_id;
+  const requestedRegion =
+    regionId ||
+    tile?.region_id ||
+    (territoryId ? parseTerritoryId(territoryId)?.region : undefined);
   const [loadedRegion, setLoadedRegion] = useState<Region | null>(null);
   const [searchLng, setSearchLng] = useState('');
   const [searchLat, setSearchLat] = useState('');
-  const virtual = requestedRegion ? worldTileFromId(requestedRegion) : null;
   const region =
     (loadedRegion?.id === requestedRegion ? loadedRegion : null) ??
     regions.find((r) => r.id === requestedRegion) ??
-    (virtual && config ? regionForTile(virtual, config.season.id) : undefined);
+    (requestedRegion && config ? regionFor(requestedRegion, config.season.id) : null) ??
+    undefined;
+  // Version 1 world-tile links (bookmarks, old URLs) open the plot region at their centre.
+  useEffect(() => {
+    const legacy = regionId ? worldTileFromId(regionId) : null;
+    if (legacy)
+      navigate(
+        `/region/${plotAt((legacy.west + legacy.east) / 2, (legacy.south + legacy.north) / 2).region}`,
+        { replace: true },
+      );
+  }, [regionId]);
   useEffect(() => {
     if (!requestedRegion) return;
     const controller = new AbortController();
@@ -102,9 +110,10 @@ export function MapPage() {
   const mine = tile?.owner_user_id === user?.id && Boolean(user),
     adjacent =
       tile &&
-      state?.territories.some(
-        (t) =>
-          t.region_id === tile.region_id && Math.abs(t.x - tile.x) + Math.abs(t.y - tile.y) === 1,
+      state?.territories.some((t) =>
+        tile.gx != null
+          ? t.gx != null && Math.abs(t.gx - tile.gx) + Math.abs(t.gy! - tile.gy!) === 1
+          : t.region_id === tile.region_id && Math.abs(t.x - tile.x) + Math.abs(t.y - tile.y) === 1,
       );
   const act = async (type: 'claim' | 'build') => {
     if (!user || !state) {
@@ -282,7 +291,7 @@ export function MapPage() {
                   Math.abs(lng) <= 180 &&
                   Math.abs(lat) <= 90
                 )
-                  navigate(`/region/${rootTileAt(lng, lat).id}`);
+                  navigate(`/territory/${plotTerritoryId(config!.season.id, plotAt(lng, lat))}`);
               }}
             >
               <label>

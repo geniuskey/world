@@ -1,8 +1,10 @@
 import type { Region } from './game';
 import { worldTileFromId } from './worldGrid';
+import { plotCell, plotPoint, plotRegionFromId } from './plots';
 
-// Version 1 geographic grid: 250 m at the region's latitude, aligned in Web Mercator.
-// This is a game location reference, not cadastral or surveyed land.
+// Plot regions (z14:x:y) use the global zoom-17 plot grid in shared/plots.ts.
+// Archived version 1 regions keep their grid: 250 m at the region's latitude, aligned in
+// Web Mercator. Neither is cadastral or surveyed land.
 export const TILE_METERS = 250;
 const EARTH_CIRCUMFERENCE = 40_075_016.686;
 const mercatorY = (latitude: number) =>
@@ -17,10 +19,14 @@ function grid(region: Region) {
   };
 }
 export function gridPoint(region: Region, x: number, y: number): [number, number] {
+  const plots = plotRegionFromId(region.id);
+  if (plots) return plotPoint(plots, x, y);
   const { step, west, north } = grid(region);
   return [(west + x * step) * 360 - 180, latitudeAt(north + y * step)];
 }
 export function gridCell(region: Region, longitude: number, latitude: number) {
+  const plots = plotRegionFromId(region.id);
+  if (plots) return plotCell(plots, longitude, latitude);
   const { step, west, north } = grid(region);
   return {
     x: Math.floor(((longitude + 180) / 360 - west) / step),
@@ -31,6 +37,8 @@ export function coordinates([longitude, latitude]: [number, number]) {
   return `${Math.abs(latitude).toFixed(5)}° ${latitude < 0 ? 'S' : 'N'}, ${Math.abs(longitude).toFixed(5)}° ${longitude < 0 ? 'W' : 'E'}`;
 }
 export const regionPlace = (id: string, locale: string) => {
+  const plots = plotRegionFromId(id);
+  if (plots) return coordinates(plotPoint(plots, 4, 4));
   const tile = worldTileFromId(id);
   if (tile) return coordinates([(tile.west + tile.east) / 2, (tile.south + tile.north) / 2]);
   return id;

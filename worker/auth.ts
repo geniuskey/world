@@ -73,7 +73,7 @@ export async function upsertUser(
     subject,
   );
   if (user?.status !== 'active') throw new ApiError('ACCOUNT_BLOCKED', 403);
-  await join(db, user.id, profile.region_id, now, c.env.WORLD_AUTO_SPLIT_ENABLED === 'true');
+  await join(db, user.id, profile.region_id, now, profile.territory_id);
   await newSession(c, user.id);
   return user.id;
 }

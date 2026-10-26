@@ -28,6 +28,7 @@ export const loginSchema = z
   .object({
     display_name: displayName,
     region_id: id,
+    territory_id: id.optional(),
     locale: z.enum(['en', 'ko']).default('en'),
     accept_rules: z.literal(true),
   })

@@ -13,13 +13,9 @@ import {
 } from '../shared/schemas';
 import { Db } from './db';
 import { withPopulation } from './population';
-import { worldTile, worldTiles, virtualTerritories } from './world';
-import {
-  WORLD_INITIAL_TILES,
-  WORLD_SPLIT_PLAYERS,
-  WORLD_MAX_LEVEL,
-  regionForTile,
-} from '../shared/worldGrid';
+import { prepareSettlement, regionExists, worldTiles, virtualTerritories } from './world';
+import { isPlotRegion, parseTerritoryId, plotRegion } from '../shared/plots';
+import { WORLD_INITIAL_TILES, WORLD_SPLIT_PLAYERS, WORLD_MAX_LEVEL } from '../shared/worldGrid';
 import { ApiError, type AppEnv, type Ctx, type Env } from './types';
 import { authenticate, devLogin, startOAuth, finishOAuth, logout, localAuth, sha256 } from './auth';
 import { command, currentSeason, join, playerState, snapshot } from './game';
@@ -192,7 +188,7 @@ app.get('/api/regions', (c) =>
       regions: await c
         .get('db')
         .all(
-          "SELECT r.*,w.split AS world_split,w.level AS world_level,w.parent_id,owned_count AS owned,land_count-owned_count AS available FROM regions r LEFT JOIN world_tiles w ON w.id=r.id AND w.season_id=r.season_id WHERE r.season_id=? AND r.status='open' AND w.id IS NOT NULL AND r.owned_count>0 ORDER BY w.level IS NOT NULL,r.rowid DESC LIMIT 128",
+          "SELECT r.*,w.split AS world_split,w.level AS world_level,w.parent_id,owned_count AS owned,land_count-owned_count AS available FROM regions r LEFT JOIN world_tiles w ON w.id=r.id AND w.season_id=r.season_id WHERE r.season_id=? AND r.status='open' AND (w.id IS NOT NULL OR r.id LIKE 'z14:%') AND r.owned_count>0 ORDER BY w.level IS NOT NULL,r.rowid DESC LIMIT 128",
           season.id,
         ),
     });
@@ -210,9 +206,9 @@ app.get('/api/regions/:id', async (c) => {
     season.id,
   );
   if (region) return c.json({ region });
-  const tile = await worldTile(db, season.id, regionId);
-  if (!tile) throw new ApiError('NOT_FOUND', 404);
-  return c.json({ region: regionForTile(tile, season.id) });
+  const plots = plotRegion(regionId, season.id);
+  if (!plots) throw new ApiError('NOT_FOUND', 404);
+  return c.json({ region: plots });
 });
 app.get('/api/map/chunks', (c) =>
   publicCache(c, 60, async () => {
@@ -229,13 +225,13 @@ app.get('/api/map/chunks', (c) =>
       cy,
     );
     if (!version) {
-      const zone = await worldTile(db, season.id, region);
-      if (!zone || cx !== 0 || cy !== 0) throw new ApiError('CHUNK_NOT_FOUND', 404);
+      if (!(await regionExists(db, season.id, region)) || cx !== 0 || cy !== 0)
+        throw new ApiError('CHUNK_NOT_FOUND', 404);
       return c.json({ region, cx, cy, version: 0, tiles: virtualTerritories(season.id, region) });
     }
     const etag = `"${season.id}-${region}-${cx}-${cy}-${version.version}"`;
     const tiles = await db.all(
-      'SELECT id,region_id,season_id,x,y,cx,cy,terrain_type,owner_user_id,acquired_at,version,structure_type,is_starter FROM territories WHERE season_id=? AND region_id=? AND cx=? AND cy=? ORDER BY y,x',
+      'SELECT id,region_id,season_id,x,y,gx,gy,cx,cy,terrain_type,owner_user_id,acquired_at,version,structure_type,is_starter FROM territories WHERE season_id=? AND region_id=? AND cx=? AND cy=? ORDER BY y,x',
       season.id,
       region,
       cx,
@@ -249,7 +245,7 @@ app.get('/api/map/population', (c) =>
     const region = id.parse(c.req.query('region'));
     const db = c.get('db'),
       season = await currentSeason(db);
-    if (!(await worldTile(db, season.id, region))) throw new ApiError('NOT_FOUND', 404);
+    if (!(await regionExists(db, season.id, region))) throw new ApiError('NOT_FOUND', 404);
     const ids = virtualTerritories(season.id, region).map((tile) => tile.id);
     const samples = await db.all(
       `SELECT territory_id,population,year,source FROM territory_population
@@ -287,9 +283,9 @@ app.get('/api/territories/:id', async (c) => {
     );
   if (!tile) {
     const season = await currentSeason(c.get('db'));
-    const match = c.req.param('id').match(/^([^:]+):(earth2?:[0-9:]+):(\d+):(\d+)$/);
-    if (match && match[1] === season.id && (await worldTile(c.get('db'), season.id, match[2]))) {
-      const virtual = virtualTerritories(season.id, match[2]).find(
+    const match = parseTerritoryId(c.req.param('id'));
+    if (match?.season === season.id && (await regionExists(c.get('db'), season.id, match.region))) {
+      const virtual = virtualTerritories(season.id, match.region).find(
         (t) => t.id === c.req.param('id'),
       );
       if (virtual) return c.json({ territory: await withPopulation(c.get('db'), virtual) });
@@ -339,16 +335,10 @@ app.get('/api/me/state', async (c) =>
 );
 app.post('/api/join', async (c) => {
   const body = z
-    .object({ region_id: id, accept_rules: z.literal(true) })
+    .object({ region_id: id, territory_id: id.optional(), accept_rules: z.literal(true) })
     .strict()
     .parse(await jsonBody(c));
-  await join(
-    c.get('db'),
-    c.get('user').id,
-    body.region_id,
-    c.get('now'),
-    c.env.WORLD_AUTO_SPLIT_ENABLED === 'true',
-  );
+  await join(c.get('db'), c.get('user').id, body.region_id, c.get('now'), body.territory_id);
   return c.json({ ok: true });
 });
 app.post('/api/me/profile', async (c) => {
@@ -399,6 +389,10 @@ for (const [path, type] of [
     const { territory_id, idempotency_key } = claimSchema.parse(await jsonBody(c));
     const db = c.get('db'),
       season = await currentSeason(db);
+    // Plot regions are allocated lazily, so claiming across a region edge allocates it first.
+    const target = parseTerritoryId(territory_id);
+    if (type === 'claim' && target?.season === season.id && isPlotRegion(target.region))
+      await prepareSettlement(db, season.id, target.region);
     return c.json(
       await command(
         db,

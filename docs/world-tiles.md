@@ -1,4 +1,6 @@
-# Adaptive world tiles
+# Adaptive world tiles (overview only)
+
+Since land ownership v2 (migration 0012), settlement uses the zoom-17 plot grid described in [map data](map-data.md#plot-grid). World tiles below are the zoomed-out overview layer only. Version 1 regions created from them are archived, and subdivision (`WORLD_AUTO_SPLIT_ENABLED`) no longer routes settlement. The rest of this page describes the version 1 design.
 
 Earth starts with **1,048,576 logical tiles**, arranged as 1,024 longitude columns × 1,024 latitude rows. The rectangles cover all longitudes and latitudes, including ocean and polar zones. They are game zones, not national boundaries or equal-area parcels. Ocean zones may contain fictional productive game terrain.
 

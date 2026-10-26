@@ -1,5 +1,13 @@
 import { test, expect, type Page } from '@playwright/test';
-import { worldTileFromId, worldTileName } from '../../shared/worldGrid';
+import { plotAt, plotRegion, plotTerritoryId } from '../../shared/plots';
+import { coordinates, gridPoint } from '../../shared/geography';
+
+// Plot regions used by browser fixtures: Seoul (127, 37.5) and Lisbon.
+const seoul = plotAt(127, 37.5);
+const REGION = seoul.region;
+const SEOUL_PLOT = `/territory/${plotTerritoryId('s1', seoul)}`;
+const LISBON = plotAt(-9.14, 38.72).region;
+const PLOT_REGION_URL = /\/region\/z14:\d+:\d+$/;
 
 const mapFixture = async (route: import('@playwright/test').Route) => {
   if (new URL(route.request().url()).pathname === '/planet')
@@ -19,12 +27,12 @@ test.beforeEach(async ({ page }) => {
 
 const unique = () => `Explorer ${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 async function signup(page: Page, name = unique()) {
-  await page.goto('/region/earth2:873:725');
+  await page.goto(`/region/${REGION}`);
   await page.getByRole('button', { name: 'Join the world', exact: true }).click();
   await page.getByLabel('Settler name').pressSequentially(name, { delay: 5 });
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Enter local playtest' }).click();
-  await expect(page).toHaveURL(/\/region\/earth2:873:725/);
+  await expect(page).toHaveURL(`/region/${REGION}`);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   return name;
 }
@@ -49,11 +57,13 @@ test('public exploration, language, regional navigation and no overflow', async 
   await page.locator('.coordinate-search > summary').click();
   await page.getByLabel('Longitude', { exact: true }).fill('127');
   await page.getByLabel('Latitude', { exact: true }).fill('37.5');
-  await page.getByRole('button', { name: 'Explore a world tile', exact: true }).click();
-  await expect(page).toHaveURL('/region/earth2:873:725');
+  await page.getByRole('button', { name: 'Go to this location', exact: true }).click();
+  await expect(page).toHaveURL(SEOUL_PLOT);
   await page.locator('.coordinate-search > summary').click();
   await expect(page.getByRole('img', { name: 'Regional territory map' })).toBeVisible();
   await expect(page.locator('[data-testid^="tile-"]').first()).toBeVisible();
+  // The coordinates selected their plot; close its details to reach the map controls.
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
   await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
@@ -157,7 +167,7 @@ test('slow map loading, drag, and background polling stay bounded', async ({ pag
     await new Promise((resolve) => setTimeout(resolve, 180));
     await route.continue();
   });
-  await page.goto('/region/earth2:486:732');
+  await page.goto(`/region/${LISBON}`);
   await expect(page.locator('[data-testid^="tile-"]').first()).toBeVisible();
   const map = page.getByRole('img', { name: 'Regional territory map' });
   await map.scrollIntoViewIfNeeded();
@@ -179,7 +189,7 @@ test('slow map loading, drag, and background polling stay bounded', async ({ pag
   expect(chunks.length).toBeLessThanOrEqual(12);
 });
 test('two-finger pinch zooms without selecting or claiming a tile', async ({ page, context }) => {
-  await page.goto('/region/earth2:486:732');
+  await page.goto(`/region/${LISBON}`);
   await expect(page.locator('[data-testid^="tile-"]').first()).toBeVisible();
   const map = page.getByRole('img', { name: 'Regional territory map' });
   await map.scrollIntoViewIfNeeded();
@@ -212,7 +222,7 @@ test('two-finger pinch zooms without selecting or claiming a tile', async ({ pag
 });
 
 test('geographic location, projection switching and world exploration', async ({ page }) => {
-  await page.goto('/region/earth2:873:725');
+  await page.goto(`/region/${REGION}`);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const tile = page.getByTestId('tile-4-4');
@@ -220,9 +230,13 @@ test('geographic location, projection switching and world exploration', async ({
   await tile.scrollIntoViewIfNeeded();
   const bounds = (await tile.boundingBox())!;
   await page.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-  await expect(page.locator('.territory-location')).toContainText('37.529');
+  const point = gridPoint(plotRegion(REGION, 's1')!, 4.5, 4.5);
+  await expect(page.locator('.territory-location')).toContainText(coordinates(point));
   const link = page.getByRole('link', { name: 'View this location on OpenStreetMap' });
-  await expect(link).toHaveAttribute('href', /mlat=37\.52.*mlon=127\.09/);
+  await expect(link).toHaveAttribute(
+    'href',
+    `https://www.openstreetmap.org/?mlat=${point[1]}&mlon=${point[0]}#map=16/${point[1]}/${point[0]}`,
+  );
   await page.getByRole('button', { name: '3D globe', exact: true }).click();
   await expect(page.getByRole('button', { name: '3D globe', exact: true })).toHaveAttribute(
     'aria-pressed',
@@ -243,7 +257,7 @@ test('geographic location, projection switching and world exploration', async ({
 test('basemap failures explain the problem and can be retried', async ({ page }) => {
   const unavailable = (route: import('@playwright/test').Route) => route.abort();
   await page.route('https://tiles.openfreemap.org/**', unavailable);
-  await page.goto('/region/earth2:873:725');
+  await page.goto(`/region/${REGION}`);
   await expect(
     page.getByText('Map connection interrupted. Check your connection or retry.'),
   ).toBeVisible();
@@ -271,33 +285,38 @@ test('world tile exploration and first settlement work without preallocated plot
   const canvas = page.locator('.earth-map canvas');
   await canvas.scrollIntoViewIfNeeded();
   await canvas.click();
-  await expect(page).toHaveURL(/\/region\/earth2:\d+:\d+$/);
+  await expect(page).toHaveURL(PLOT_REGION_URL);
+  // Coordinates open the exact plot, and joining from it settles that plot.
+  // Desktop and mobile share one database, so each settles its own plot.
+  const [longitude, latitude, area] =
+    test.info().project.name === 'mobile'
+      ? ['127.0276', '37.4979', 'Yeoksam 1(il)-dong, Gangnam-gu, Seoul']
+      : ['126.9779', '37.5663', 'Myeong-dong, Jung-gu, Seoul'];
+  const home = plotAt(Number(longitude), Number(latitude));
   await page.locator('.coordinate-search > summary').click();
-  await page.getByLabel('Longitude', { exact: true }).fill('127');
-  await page.getByLabel('Latitude', { exact: true }).fill('37.5');
-  await page.getByRole('button', { name: 'Explore a world tile', exact: true }).click();
-  await expect(page).toHaveURL('/region/earth2:873:725');
-  await expect(page.getByTestId('tile-4-4')).toBeVisible();
+  await page.getByLabel('Longitude', { exact: true }).fill(longitude);
+  await page.getByLabel('Latitude', { exact: true }).fill(latitude);
+  await page.getByRole('button', { name: 'Go to this location', exact: true }).click();
+  await expect(page).toHaveURL(`/territory/${plotTerritoryId('s1', home)}`);
+  await expect(page.getByTestId(`tile-${home.x}-${home.y}`)).toBeVisible();
   await page.getByRole('button', { name: 'Join the world', exact: true }).click();
-  await expect(page.getByLabel('Starting region')).toHaveValue(
-    worldTileName(worldTileFromId('earth2:873:725')!),
+  await expect(page.getByLabel('Your first land')).toHaveValue(
+    `${area} · ${home.x + 1}-${home.y + 1}`,
   );
   await page.getByLabel('Settler name').fill(unique());
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Enter local playtest' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const state = await (await page.request.get('/api/me/state')).json();
-  expect(state.territories[0].region_id).toBe('earth2:873:725');
+  expect(state.territories[0].id).toBe(plotTerritoryId('s1', home));
   expect(state.territory_count).toBe(1);
   expect(errors).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('clicks show unique region names inside and outside the settlement', async ({ page }) => {
-  const id = 'earth2:873:725';
-  const zone = worldTileFromId(id)!;
-  await page.goto(`/region/${id}`);
-  await expect(page.locator('.atlas-label')).toContainText(worldTileName(zone));
+test('clicks name real places and open plots outside the current region', async ({ page }) => {
+  await page.goto(`/region/${REGION}`);
+  await expect(page.locator('.atlas-label')).toContainText(/-dong, .+-gu/);
   const tile = page.getByTestId('tile-4-4');
   await expect(tile).toBeVisible();
   const canvas = page.locator('.earth-map canvas');
@@ -306,17 +325,28 @@ test('clicks show unique region names inside and outside the settlement', async 
   await canvas.click({
     position: { x: plot.x + plot.width / 2 - bounds.x, y: plot.y + plot.height / 2 - bounds.y },
   });
-  await expect(page.locator('.maplibregl-popup-content')).toContainText(
-    `${worldTileName(zone)} · 5-5`,
-  );
+  await expect(page.locator('.maplibregl-popup-content')).toContainText('· 5-5');
+  await expect(page.locator('.maplibregl-popup-content')).toContainText('Seoul');
   await page.getByRole('button', { name: '한국어로 변경' }).click();
-  await expect(page.locator('.atlas-label')).toContainText(worldTileName(zone, 'ko'));
-  await expect(page.locator('.maplibregl-popup-content')).toContainText(worldTileName(zone, 'ko'));
+  await expect(page.locator('.atlas-label')).toContainText(/동$/);
   await page.getByRole('button', { name: '닫기', exact: true }).click();
-  await canvas.click({ position: { x: bounds.width * 0.9, y: bounds.height * 0.35 } });
-  await expect(page.locator('.maplibregl-popup-content')).toContainText(worldTileName(zone, 'ko'));
-  const closeDetail = page.getByRole('button', { name: '닫기', exact: true });
-  if (await closeDetail.isVisible()) await closeDetail.click();
+  // Every point is a plot: a click beyond this region opens that plot in its own region.
+  const zoom = Number(await page.locator('.earth-cells').getAttribute('data-zoom'));
+  await page.getByRole('button', { name: '축소', exact: true }).click();
+  await expect
+    .poll(async () => Number(await page.locator('.earth-cells').getAttribute('data-zoom')))
+    .toBeLessThanOrEqual(zoom - 0.99);
+  const outside = (await page.getByTestId('tile-4-4').boundingBox())!;
+  await canvas.click({
+    position: {
+      x: outside.x + outside.width * 5.5 - bounds.x,
+      y: outside.y + outside.height / 2 - bounds.y,
+    },
+  });
+  await expect(page).toHaveURL(/\/territory\/s1:z14:\d+:\d+:\d:\d$/);
+  expect(page.url()).not.toContain(REGION);
+  await expect(page.locator('.detail-sidebar.has-selection')).toBeVisible();
+  await page.getByRole('button', { name: '닫기', exact: true }).click();
   for (let step = 0; step < 6; step++) {
     const previousZoom = Number(await page.locator('.earth-cells').getAttribute('data-zoom'));
     await page.getByRole('button', { name: '축소', exact: true }).click();
@@ -324,14 +354,10 @@ test('clicks show unique region names inside and outside the settlement', async 
       .poll(async () => Number(await page.locator('.earth-cells').getAttribute('data-zoom')))
       .toBeLessThanOrEqual(previousZoom - 0.99);
   }
+  const before = page.url();
   await canvas.click({ position: { x: bounds.width * 0.9, y: bounds.height * 0.35 } });
-  await expect(page).not.toHaveURL(`/region/${id}`);
-  const next = worldTileFromId(
-    decodeURIComponent(new URL(page.url()).pathname.slice('/region/'.length)),
-  )!;
-  expect(next).not.toBeNull();
-  expect(worldTileName(next, 'ko')).not.toBe(worldTileName(zone, 'ko'));
-  await expect(page.locator('.atlas-label')).toContainText(worldTileName(next, 'ko'));
+  await expect(page).toHaveURL(PLOT_REGION_URL);
+  expect(page.url()).not.toBe(before);
 });
 
 test('the local world and grid remain usable when the external basemap fails', async ({ page }) => {
@@ -356,14 +382,14 @@ test('the local world and grid remain usable when the external basemap fails', a
     fullPage: true,
   });
   await canvas.click();
-  await expect(page).toHaveURL(/\/region\/earth2:\d+:\d+$/);
+  await expect(page).toHaveURL(PLOT_REGION_URL);
   expect(errors).toEqual([]);
 });
 
 test('grid follows the pointer and preserves selected and keyboard-focused plots', async ({
   page,
 }) => {
-  await page.goto('/region/earth2:873:725');
+  await page.goto(`/region/${REGION}`);
   const tile = page.getByTestId('tile-4-4');
   await expect(tile).toBeVisible();
   const spotlight = page.locator('.earth-cells mask rect');
@@ -391,7 +417,7 @@ test('grid follows the pointer and preserves selected and keyboard-focused plots
 });
 
 test('regional grid fills the viewport after moving beyond the settlement', async ({ page }) => {
-  await page.goto('/region/earth2:873:725');
+  await page.goto(`/region/${REGION}`);
   await expect(page.getByTestId('tile-4-4')).toBeVisible();
   const grid = page.locator('.regional-grid');
   const pattern = page.locator('.earth-cells pattern');
@@ -436,7 +462,7 @@ test('zooming out fills the world grid while the next area response is delayed',
     const bbox = url.searchParams.get('bbox')?.split(',').map(Number);
     return url.pathname === '/api/world/tiles' && !!bbox && bbox[2] - bbox[0] < 1;
   });
-  await page.goto('/region/earth2:873:725');
+  await page.goto(`/region/${REGION}`);
   await expect(page.getByTestId('tile-4-4')).toBeVisible();
   await initialArea;
   let release!: () => void;

@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Bookmark, BookmarkCheck, Layers, Navigation, Search, X } from 'lucide-react';
 import { useWorld } from './state';
-import { api, ApiFailure } from './api';
+import { api } from './api';
 import type { Region, Territory } from '../shared/game';
-import { worldTileFromId, worldTileName, type WorldTile } from '../shared/worldGrid';
+import { plotAt, plotTerritoryId } from '../shared/plots';
+import { placeName, searchPlaces, type Place } from '../shared/places';
+import { loadPlaceIndex } from './places';
 import {
   measureDistance,
   regionLandmarks,
@@ -109,16 +111,13 @@ export function MapTools({
   populationLoading: boolean;
   retryPopulation: () => void;
 }) {
-  const { t, locale, regions } = useWorld();
+  const { t, locale, config } = useWorld();
   const [tab, setTab] = useState('mapSearch');
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<WorldTile[]>([]);
+  const [results, setResults] = useState<Place[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(false);
   const [searchRetry, setSearchRetry] = useState(0);
-  const known = [
-    ...new Set([...regions.map((value) => value.id), ...bookmarks, ...(region ? [region.id] : [])]),
-  ].join(',');
   useEffect(() => {
     if (!query.trim()) {
       setResults([]);
@@ -127,58 +126,18 @@ export function MapTools({
     }
     setSearching(true);
     setSearchError(false);
-    setResults([]);
-    let worker: Worker | undefined;
-    const controller = new AbortController();
+    let current = true;
     const timer = setTimeout(() => {
-      try {
-        worker = new Worker(new URL('./regionSearch.worker.ts', import.meta.url), {
-          type: 'module',
-        });
-        worker.onmessage = (event: MessageEvent<WorldTile[]>) => {
-          worker?.terminate();
-          void Promise.all(
-            event.data.map(async (tile) => {
-              if (tile.level === 0) return tile;
-              try {
-                await api(`/regions/${tile.id}`, { signal: controller.signal });
-                return tile;
-              } catch (error) {
-                if (error instanceof ApiFailure && error.status === 404) return null;
-                throw error;
-              }
-            }),
-          )
-            .then((matches) => {
-              if (!controller.signal.aborted) {
-                setResults(matches.filter((tile): tile is WorldTile => tile !== null));
-                setSearching(false);
-              }
-            })
-            .catch(() => {
-              if (!controller.signal.aborted) {
-                setSearchError(true);
-                setSearching(false);
-              }
-            });
-        };
-        worker.onerror = () => {
-          setSearchError(true);
-          setSearching(false);
-          worker?.terminate();
-        };
-        worker.postMessage({ query, locale, known: known.split(',') });
-      } catch {
-        setSearchError(true);
-        setSearching(false);
-      }
-    }, 250);
+      loadPlaceIndex('KOR')
+        .then((index) => current && setResults(searchPlaces(index, query)))
+        .catch(() => current && setSearchError(true))
+        .finally(() => current && setSearching(false));
+    }, 200);
     return () => {
+      current = false;
       clearTimeout(timer);
-      worker?.terminate();
-      controller.abort();
     };
-  }, [query, locale, known, searchRetry]);
+  }, [query, searchRetry]);
   const landmarks = useMemo(() => regionLandmarks(tiles), [tiles]);
   const distance = points.length === 2 ? measureDistance(points[0], points[1]) : null;
   const saved = region ? bookmarks.includes(region.id) : false;
@@ -188,21 +147,19 @@ export function MapTools({
         ? bookmarks.filter((value) => value !== id)
         : [...bookmarks, id].slice(0, 100),
     );
-  const resultList = (items: WorldTile[], removable = false) => (
+  const bookmarkList = (items: string[]) => (
     <ul className="map-place-list">
-      {items.map((tile) => (
-        <li key={tile.id}>
-          <Link to={`/region/${tile.id}`}>{worldTileName(tile, locale)}</Link>
-          {removable && (
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={`${t('mapUnsave')}: ${worldTileName(tile, locale)}`}
-              onClick={() => toggleBookmark(tile.id)}
-            >
-              <X size={14} />
-            </button>
-          )}
+      {items.map((id) => (
+        <li key={id}>
+          <Link to={`/region/${id}`}>{t(id as TextKey)}</Link>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={`${t('mapUnsave')}: ${t(id as TextKey)}`}
+            onClick={() => toggleBookmark(id)}
+          >
+            <X size={14} />
+          </button>
         </li>
       ))}
     </ul>
@@ -268,7 +225,18 @@ export function MapTools({
                 ) : query.trim() && !results.length ? (
                   <p>{t('mapNoResults')}</p>
                 ) : (
-                  resultList(results)
+                  <ul className="map-place-list">
+                    {results.map((place) => (
+                      <li key={place.code}>
+                        {/* Each area opens the plot at its interior label point. */}
+                        <Link
+                          to={`/territory/${plotTerritoryId(config!.season.id, plotAt(...place.point))}`}
+                        >
+                          {placeName(place, locale)}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
               {results.length >= 16 && <p className="map-tool-note">{t('mapResultsHint')}</p>}
@@ -291,13 +259,7 @@ export function MapTools({
                 )}
               </div>
               {bookmarks.length ? (
-                resultList(
-                  bookmarks.flatMap((id) => {
-                    const tile = worldTileFromId(id);
-                    return tile ? [tile] : [];
-                  }),
-                  true,
-                )
+                bookmarkList(bookmarks)
               ) : (
                 <p className="map-tool-note">{t('mapNoBookmarks')}</p>
               )}

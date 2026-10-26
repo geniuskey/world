@@ -1,5 +1,6 @@
 import type { Territory } from './game';
-import { rootTile, worldTileFromId, worldTileName, type WorldTile } from './worldGrid';
+import { worldTileFromId } from './worldGrid';
+import { isPlotRegion } from './plots';
 
 export type MapActivity = {
   id: string;
@@ -55,7 +56,10 @@ export function readBookmarks(value: string | null): string[] {
     return Array.isArray(input)
       ? [
           ...new Set(
-            input.filter((id): id is string => typeof id === 'string' && !!worldTileFromId(id)),
+            input.filter(
+              (id): id is string =>
+                typeof id === 'string' && (isPlotRegion(id) || !!worldTileFromId(id)),
+            ),
           ),
         ].slice(0, 100)
       : [];
@@ -65,46 +69,6 @@ export function readBookmarks(value: string | null): string[] {
 }
 
 // Runs in a Web Worker so even an unmatched worldwide query cannot block the map.
-export function searchWorldRegions(
-  query: string,
-  locale: string,
-  known: string[] = [],
-  limit = 16,
-): WorldTile[] {
-  const text = query.trim().toLocaleLowerCase();
-  if (!text || text.length > 160) return [];
-  const code = text.match(/(?:^|·\s*)(\d{1,4})-(\d{1,4})((?:\/[1-4]){0,6})$/);
-  const exact =
-    worldTileFromId(text) ??
-    (code
-      ? worldTileFromId(
-          `earth2:${+code[1]}:${+code[2]}${code[3]
-            .split('/')
-            .filter(Boolean)
-            .map((n) => `:${+n - 1}`)
-            .join('')}`,
-        )
-      : null);
-  if (exact) return [exact];
-  const matches = (tile: WorldTile) =>
-    [worldTileName(tile, locale), worldTileName(tile, locale === 'ko' ? 'en' : 'ko'), tile.id].some(
-      (name) => name.toLocaleLowerCase().includes(text),
-    );
-  const results = new Map<string, WorldTile>();
-  for (const id of known) {
-    const tile = worldTileFromId(id);
-    if (tile && matches(tile)) results.set(id, tile);
-    if (results.size >= limit) return [...results.values()];
-  }
-  for (let y = 0; y < 1024; y++)
-    for (let x = 0; x < 1024; x++) {
-      const tile = rootTile(x, y);
-      if (matches(tile)) results.set(tile.id, tile);
-      if (results.size >= limit) return [...results.values()];
-    }
-  return [...results.values()];
-}
-
 export type Landmark = { id: string; kind: 'peak' | 'lake' | 'grove' | 'ruins'; tile: Territory };
 export function regionLandmarks(tiles: Territory[]): Landmark[] {
   return (
