@@ -7,6 +7,8 @@ const seoul = plotAt(127, 37.5);
 const REGION = seoul.region;
 const SEOUL_PLOT = `/territory/${plotTerritoryId('s1', seoul)}`;
 const LISBON = plotAt(-9.14, 38.72).region;
+// Land trading signs up four accounts per run; a separate region keeps Seoul's starters free.
+const BUSAN = plotAt(129.07, 35.18).region;
 const PLOT_REGION_URL = /\/region\/z14:\d+:\d+$/;
 
 const mapFixture = async (route: import('@playwright/test').Route) => {
@@ -26,13 +28,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 const unique = () => `Explorer ${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-async function signup(page: Page, name = unique()) {
-  await page.goto(`/region/${REGION}`);
+async function signup(page: Page, name = unique(), region = REGION) {
+  await page.goto(`/region/${region}`);
   await page.getByRole('button', { name: 'Join the world', exact: true }).click();
   await page.getByLabel('Settler name').pressSequentially(name, { delay: 5 });
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Enter local playtest' }).click();
-  await expect(page).toHaveURL(`/region/${REGION}`);
+  await expect(page).toHaveURL(`/region/${region}`);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   return name;
 }
@@ -153,7 +155,7 @@ test('an owner lists a plot and another session buys it at the asking price', as
   page,
   browser,
 }) => {
-  await signup(page);
+  await signup(page, unique(), BUSAN);
   const home = (await (await page.request.get('/api/me/state')).json()).territories[0];
   await page.getByTestId(`tile-${home.x + 1}-${home.y}`).focus();
   await page.keyboard.press('Enter');
@@ -172,7 +174,7 @@ test('an owner lists a plot and another session buys it at the asking price', as
   await context.route('https://tiles.openfreemap.org/**', (route) => route.abort());
   const buyerPage = await context.newPage();
   try {
-    await signup(buyerPage);
+    await signup(buyerPage, unique(), BUSAN);
     await buyerPage.goto(`/territory/${tile.id}`);
     await buyerPage.getByRole('button', { name: 'Buy for 11 Gold', exact: true }).click();
     await expect(buyerPage.getByText('The land is yours.')).toBeVisible();
