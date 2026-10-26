@@ -26,7 +26,7 @@ import { api, mutate, post } from './api';
 import { Empty, Modal, Resource } from './components';
 import { worldTileFromId, WORLD_INITIAL_TILES } from '../shared/worldGrid';
 import { parseTerritoryId, plotAt, plotTerritoryId, regionFor } from '../shared/plots';
-import { terrainResource, type Region, type Territory } from '../shared/game';
+import { plotPrice, terrainResource, type Region, type Territory } from '../shared/game';
 import type { TextKey } from './i18n';
 
 export function MapPage() {
@@ -138,6 +138,7 @@ export function MapPage() {
   const terrain = tile?.terrain_type,
     resource = terrain && terrain !== 'water' ? terrainResource[terrain] : null;
   const point = region && tile ? gridPoint(region, tile.x + 0.5, tile.y + 0.5) : null;
+  const price = tile?.price_gold ?? plotPrice(tile?.population);
   const place = usePlace(point);
   const stats = useMemo(
     () =>
@@ -492,7 +493,10 @@ export function MapPage() {
                       className="button primary full"
                       disabled={
                         busy ||
-                        Boolean(state && (!adjacent || state.energy_value < 1)) ||
+                        Boolean(
+                          state &&
+                          (!adjacent || state.energy_value < 1 || state.gold_balance < price),
+                        ) ||
                         Date.now() / 1000 > config!.season.ends_at
                       }
                       onClick={() => void act('claim')}
@@ -500,13 +504,16 @@ export function MapPage() {
                       <Flag size={17} />
                       {t('claim')}
                     </button>
-                    <small className="cost-note">
+                    <small className="cost-note" title={t('claimPrice')}>
                       <Zap size={12} />
-                      {t('claimCost')}
+                      {t('claimCost', { gold: price })}
                     </small>
                     {state && !adjacent && <p className="fine-print">{t('notAdjacent')}</p>}
                     {state && state.energy_value < 1 && (
                       <p className="fine-print">{t('noEnergy')}</p>
+                    )}
+                    {state && state.gold_balance < price && (
+                      <p className="fine-print">{t('noGold', { gold: price })}</p>
                     )}
                   </>
                 ) : (

@@ -145,7 +145,9 @@ export const en = {
   production: 'Production',
   perTurn: 'every 6 hours',
   claim: 'Claim territory',
-  claimCost: '1 energy',
+  claimCost: '1 energy · {gold} Gold',
+  claimPrice: 'Ten turns of this land’s Gold income. The Gold is spent, not paid to anyone.',
+  noGold: 'You need {gold} Gold to claim this land.',
   notAdjacent: 'Expand from an edge of your existing territory.',
   noEnergy: 'Your next energy point is on its way.',
   waterHint: 'Water is part of the landscape and cannot be claimed.',
@@ -264,7 +266,7 @@ export const en = {
     'Browse without an account. Join to receive one free land tile, 100 Gold, and 12 of each resource. Territories are game grids anchored to real geographic coordinates on an OpenStreetMap basemap. Terrain and boundaries are game data.',
   ruleClaim: '02 — Grow from your roots',
   ruleClaimBody:
-    'Claim empty land directly above, below, left, or right of your territory for 1 energy. Energy refills by 1 every 6 hours, up to 4. Money cannot buy more.',
+    'Claim empty land directly above, below, left, or right of your territory for 1 energy and its land price: ten turns of that land’s Gold income (10 Gold, plus 10 per 100 residents). Energy refills by 1 every 6 hours, up to 4. Money cannot buy more.',
   ruleProduce: '03 — Let time do its thing',
   ruleProduceBody:
     'Every six hours, each land tile produces 2 of its resource and 1 Gold. A matching facility adds 2 more resources and costs 20 Gold, 8 wood, and 4 iron. Imported WorldPop population adds 1 Gold per 100 residents per turn, rounded down. Unknown population adds no income. Up to seven days of production accumulate. Building restarts that tile’s production clock.',
@@ -492,7 +494,9 @@ export const ko: Record<TextKey, string> = {
   production: '생산량',
   perTurn: '6시간마다',
   claim: '영토 점유',
-  claimCost: '행동력 1',
+  claimCost: '행동력 1 · {gold} Gold',
+  claimPrice: '이 땅이 10턴 동안 버는 Gold와 같은 값입니다. 지불한 Gold는 소멸됩니다.',
+  noGold: '이 땅을 점유하려면 {gold} Gold가 필요합니다.',
   notAdjacent: '내 영토의 상하좌우에 붙은 빈 땅으로 확장하세요.',
   noEnergy: '다음 행동력이 충전되고 있습니다.',
   waterHint: '물은 풍경의 일부로, 점유할 수 없습니다.',
@@ -608,7 +612,7 @@ export const ko: Record<TextKey, string> = {
     '로그인 없이 탐험할 수 있습니다. 가입하면 땅 한 칸, Gold 100, 자원별 12개를 받습니다. 영토는 실제 지도 좌표에 연결된 게임 격자이며, 지형과 경계는 게임 데이터입니다.',
   ruleClaim: '02 — 뿌리에서 확장하기',
   ruleClaimBody:
-    '내 영토의 상하좌우에 붙은 빈 육지를 행동력 1로 점유합니다. 행동력은 6시간마다 1, 최대 4까지 충전되며 구매할 수 없습니다.',
+    '내 영토의 상하좌우에 붙은 빈 땅을 행동력 1과 땅값으로 점유합니다. 땅값은 그 땅이 10턴 동안 버는 Gold(기본 10 Gold, 주민 100명당 10 Gold 추가)입니다. 행동력은 6시간마다 1, 최대 4까지 충전되며 구매할 수 없습니다.',
   ruleProduce: '03 — 시간이 키워주는 것',
   ruleProduceBody:
     '땅마다 6시간에 자원 2와 Gold 1을 생산합니다. 시설은 자원 생산을 2 늘리고 Gold 20, 목재 8, 철 4가 듭니다. WorldPop 추정 인구 100명당 매 턴 Gold 1을 추가로 받습니다(소수점 버림). 인구 미확인 지역의 추가 수입은 없습니다. 최대 7일의 생산량이 누적됩니다. 건설하면 해당 땅의 생산 시간이 다시 시작됩니다.',

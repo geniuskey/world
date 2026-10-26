@@ -1,6 +1,6 @@
 # Land ownership v2
 
-Status: design accepted 2026-10-26. Permanent ownership is implemented (migration 0011): the active season never ends and is no longer rotated, so every `season_id` key and ledger trigger stays unchanged. Real place names are implemented for South Korea ([map data](map-data.md#place-names)). Every point on Earth is a claimable zoom-17 plot and players settle the plot they choose (migration 0012, [map data](map-data.md#plot-grid)). Pricing, sales and buyouts are not implemented yet; the rest of rules v1 ([game-rules.md](game-rules.md), [economy.md](economy.md)) remains in force.
+Status: design accepted 2026-10-26. Permanent ownership is implemented (migration 0011): the active season never ends and is no longer rotated, so every `season_id` key and ledger trigger stays unchanged. Real place names are implemented for South Korea ([map data](map-data.md#place-names)). Every point on Earth is a claimable zoom-17 plot and players settle the plot they choose (migration 0012, [map data](map-data.md#plot-grid)). First claims pay the plot's base value as its market price (migration 0013, [economy](economy.md#land-price)): ten turns of the plot's income, so the location factor is imported population; landmark tiers, facility development and the demand index are not applied yet. Sales and buyouts are not implemented yet; the rest of rules v1 ([game-rules.md](game-rules.md), [economy.md](economy.md)) remains in force.
 
 ## Goal
 

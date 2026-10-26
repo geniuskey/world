@@ -57,6 +57,7 @@ export type Territory = {
   population?: number | null;
   population_year?: number | null;
   population_source?: string | null;
+  price_gold?: number;
 };
 export type Player = {
   id: string;
@@ -129,4 +130,9 @@ export function recoverEnergy(value: number, updatedAt: number, now: number) {
   };
 }
 export const isPermanent = (season: Pick<Season, 'ends_at'>) => season.ends_at >= PERMANENT_ENDS_AT;
+// Land ownership v2 market price: ten turns of the plot's own Gold income (1 base plus
+// 1 per 100 imported residents). Mirrored by the claim trigger in migration 0013.
+export const PRICE_TURNS = 10;
+export const plotIncome = (population?: number | null) => 1 + Math.floor((population ?? 0) / 100);
+export const plotPrice = (population?: number | null) => PRICE_TURNS * plotIncome(population);
 export const tradeTax = (total: number) => Math.ceil((total * 3) / 100);

@@ -453,6 +453,34 @@ describe('claims, recovery and production', () => {
     expect((await request(`/territories/${tile.id}`)).body.territory.population).toBe(0);
     await ledgerMatches(a);
   });
+  it('charges the land price on claims, scaled by population, and burns it', async () => {
+    const a = await actor();
+    await place(a, 2, 18);
+    const dense = 's1:earth2:300:700:0:0:0:0:0:0:3:18';
+    await db
+      .prepare('INSERT INTO territory_population VALUES(?,?,?,?,?,?)')
+      .bind(dense, 950.7, 2020, 'https://example.com/population', '[]', 1)
+      .run();
+    expect((await request(`/territories/${dense}`)).body.territory.price_gold).toBe(100);
+    // 100 starter Gold covers exactly one such plot; a second costs 10 more than remains.
+    const bought = await claim(a, dense);
+    expect(bought.status, JSON.stringify(bought.body)).toBe(200);
+    expect(bought.body.result.price_gold).toBe(100);
+    const after = await state(a);
+    expect(after.gold_balance).toBe(0);
+    expect(after.territory_count).toBe(2);
+    const ledger = await db
+      .prepare("SELECT delta FROM gold_ledger WHERE ref_id=? AND reason='claim'")
+      .bind(bought.body.action_id)
+      .first<{ delta: number }>();
+    expect(ledger!.delta).toBe(-100);
+    const broke = await claim(a, 's1:earth2:300:700:0:0:0:0:0:0:4:18');
+    expect(broke.body.error.code).toBe('INSUFFICIENT_FUNDS');
+    const unchanged = await state(a);
+    expect(unchanged.territory_count).toBe(2);
+    expect(unchanged.energy_value).toBe(after.energy_value);
+    await ledgerMatches(a);
+  });
   it('caps offline earnings at 28 turns and never rewards new territory retroactively', async () => {
     const a = await actor();
     await place(a, 2, 16);
@@ -462,10 +490,12 @@ describe('claims, recovery and production', () => {
       .run();
     const result = await claim(a, 's1:earth2:300:700:0:0:0:0:0:0:3:16');
     expect(result.status).toBe(200);
+    // 100 starter + 28 capped turns - 10 for the claimed plot.
+    expect(result.body.result.price_gold).toBe(10);
     const current = await state(a);
-    expect(current.gold_balance).toBe(128);
+    expect(current.gold_balance).toBe(118);
     expect(Object.values(current.resources).reduce((a, b) => a + b, 0)).toBe(36 + 56);
-    expect((await state(a)).gold_balance).toBe(128);
+    expect((await state(a)).gold_balance).toBe(118);
     await ledgerMatches(a);
   });
   it('builds atomically with ledgers and prevents ownership theft or duplicate costs', async () => {
@@ -726,7 +756,7 @@ describe('global plot grid', () => {
     expect(preview.status).toBe(200);
     expect(preview.body.tiles).toHaveLength(64);
     const detail = await request(`/territories/${preview.body.tiles[0].id}`);
-    expect(detail.body.territory).toEqual(preview.body.tiles[0]);
+    expect(detail.body.territory).toEqual({ ...preview.body.tiles[0], price_gold: 10 });
     expect(
       await db
         .prepare('SELECT COUNT(*) AS n FROM territories WHERE region_id=?')

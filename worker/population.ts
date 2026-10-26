@@ -1,4 +1,4 @@
-import type { Territory } from '../shared/game';
+import { plotPrice, type Territory } from '../shared/game';
 import type { Db } from './db';
 
 export async function withPopulation(db: Db, tile: Territory): Promise<Territory> {
@@ -10,5 +10,5 @@ export async function withPopulation(db: Db, tile: Territory): Promise<Territory
     'SELECT population,year AS population_year,source AS population_source FROM territory_population WHERE territory_id=?',
     tile.id,
   );
-  return { ...tile, ...data };
+  return { ...tile, ...data, price_gold: plotPrice(data?.population) };
 }

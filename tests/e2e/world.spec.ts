@@ -81,6 +81,7 @@ test('free starter, adjacent claim, construction and reload persistence', async 
   await expect(tile).toBeVisible();
   await tile.focus();
   await page.keyboard.press('Enter');
+  await expect(page.locator('.cost-note')).toHaveText('1 energy · 10 Gold');
   await page.getByRole('button', { name: 'Claim territory', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Build facility', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Build facility', exact: true }).click();
@@ -89,7 +90,8 @@ test('free starter, adjacent claim, construction and reload persistence', async 
   const current = await (await page.request.get('/api/me/state')).json();
   expect(current.territory_count).toBe(2);
   expect(current.energy_value).toBe(3);
-  expect(current.gold_balance).toBe(80);
+  // 100 starter Gold - 10 land price - 20 facility.
+  expect(current.gold_balance).toBe(70);
   expect(current.territories.some((t: { structure_type: string | null }) => t.structure_type)).toBe(
     true,
   );

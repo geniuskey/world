@@ -2,6 +2,10 @@
 
 All quantities are integers. Starter grant: 100 Gold, 12 food, 12 wood, 12 iron and one free tile. Each tile produces 2 resources and 1 Gold per complete six-hour period. Meadow produces food; forest wood; mountain iron. One matching facility adds 2 resources/period and costs 20 Gold, 8 wood, 4 iron.
 
+## Land price
+
+A claim costs one energy plus the plot's market price in Gold: ten turns of the plot's own Gold income, `10 × (1 + floor(population / 100))` (`shared/game.ts` `plotPrice`, migration 0013). An unpopulated or unimported plot costs 10 Gold; a plot with 950 imported residents costs 100. The Gold is burned, so claims are a sink alongside facilities and tax. The starter plot from joining stays free. The claim result and the territory detail report `price_gold`; a short balance fails with `INSUFFICIENT_FUNDS` and changes nothing. Every plot pays back its price in 2.5 days of its own income, so dense plots cost more without earning faster relative to their price. Demand from land trades (see [land ownership v2](land-ownership.md)) is not applied yet.
+
 Each tile has its own production clock. Newly acquired land and new facilities never earn retroactively. At most 28 periods (seven days) accumulate; excess idle production is discarded. Energy regenerates separately at one per six hours to a cap of four.
 
 Sell orders escrow full lots. A purchase fills the full lot at its integer unit price. Buyer pays `quantity × price`; seller receives that less `ceil(total × 3 / 100)` tax, recorded and burned. Cancellation returns escrow once. No self-buy, partial fills, land/cosmetic/Gems trading or NPC resource buyer. Conservation includes player inventory plus open escrow. Gold/resource ledgers are append-only and reconcile to materialized balances.
