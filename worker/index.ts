@@ -244,6 +244,40 @@ app.get('/api/map/chunks', (c) =>
     return c.json({ region, cx, cy, version: version.version, tiles }, 200, { ETag: etag });
   }),
 );
+app.get('/api/map/population', (c) =>
+  publicCache(c, 60, async () => {
+    const region = id.parse(c.req.query('region'));
+    const db = c.get('db'),
+      season = await currentSeason(db);
+    if (!(await worldTile(db, season.id, region))) throw new ApiError('NOT_FOUND', 404);
+    const ids = virtualTerritories(season.id, region).map((tile) => tile.id);
+    const samples = await db.all(
+      `SELECT territory_id,population,year,source FROM territory_population
+       WHERE territory_id IN (SELECT value FROM json_each(?))`,
+      JSON.stringify(ids),
+    );
+    return c.json({ samples });
+  }),
+);
+app.get('/api/map/activity', (c) =>
+  publicCache(c, 15, async () => {
+    const region = c.req.query('region') ? id.parse(c.req.query('region')) : null;
+    const db = c.get('db'),
+      season = await currentSeason(db);
+    const activities = await db.all(
+      `SELECT a.id,a.type,a.created_at,p.display_name AS actor_name,
+        t.id AS territory_id,t.region_id,t.x,t.y,r.longitude,r.latitude
+       FROM actions a JOIN territories t ON t.id=json_extract(a.result_json,'$.territory_id') AND t.season_id=a.season_id
+       JOIN regions r ON r.id=t.region_id AND r.season_id=t.season_id
+       JOIN profiles p ON p.user_id=a.user_id JOIN users u ON u.id=a.user_id
+       WHERE a.season_id=? AND a.type IN ('join','claim','build') AND a.status='completed'
+         AND u.status='active' ${region ? 'AND t.region_id=?' : ''}
+       ORDER BY a.created_at DESC,a.id DESC LIMIT 30`,
+      ...[season.id, ...(region ? [region] : [])],
+    );
+    return c.json({ activities });
+  }),
+);
 app.get('/api/territories/:id', async (c) => {
   const tile = await c
     .get('db')

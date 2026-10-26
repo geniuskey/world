@@ -18,7 +18,7 @@ import {
 import { useWorld } from './state';
 import { api, post } from './api';
 import type { TextKey } from './i18n';
-import { worldTileFromId, regionForTile } from '../shared/worldGrid';
+import { worldTileFromId } from '../shared/worldGrid';
 import type { ResourceKind } from '../shared/game';
 
 export const resourceIcon = { food: Wheat, wood: TreePine, iron: Mountain };
@@ -41,6 +41,36 @@ export function Resource({
 export function Header() {
   const { t, locale, setLocale, user, state, setAuthOpen, config } = useWorld();
   const [menu, setMenu] = useState(false);
+  const header = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  useEffect(() => setMenu(false), [location.pathname]);
+  useEffect(() => {
+    const element = header.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      document.documentElement.style.setProperty(
+        '--app-header-height',
+        `${element.offsetHeight}px`,
+      );
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (!menu) return;
+    const dismiss = (event: PointerEvent) => {
+      if (!header.current?.contains(event.target as Node)) setMenu(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenu(false);
+    };
+    document.addEventListener('pointerdown', dismiss);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', dismiss);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [menu]);
   const links = [
     ['/', 'world'],
     ['/me', 'territory'],
@@ -49,7 +79,7 @@ export function Header() {
     ['/store', 'store'],
   ] as const;
   return (
-    <>
+    <div className="app-header" ref={header}>
       <header className="topbar">
         <Link to="/" className="brand" aria-label="WORLD">
           <Globe2 size={29} strokeWidth={1.4} />
@@ -57,7 +87,11 @@ export function Header() {
             WORLD<span className="brand-dot">.</span>
           </span>
         </Link>
-        <nav className={menu ? 'main-nav open' : 'main-nav'} aria-label={t('world')}>
+        <nav
+          id="main-navigation"
+          className={menu ? 'main-nav open' : 'main-nav'}
+          aria-label={t('world')}
+        >
           {links.map(([path, key]) => (
             <NavLink key={path} to={path} end={path === '/'} onClick={() => setMenu(false)}>
               {t(key)}
@@ -87,9 +121,10 @@ export function Header() {
             className="icon-button menu-button"
             aria-label="Menu"
             aria-expanded={menu}
+            aria-controls="main-navigation"
             onClick={() => setMenu(!menu)}
           >
-            <Menu size={21} />
+            {menu ? <X size={21} /> : <Menu size={21} />}
           </button>
         </div>
       </header>
@@ -120,7 +155,7 @@ export function Header() {
           </span>
         )}
       </div>
-    </>
+    </div>
   );
 }
 export function Modal({
@@ -278,7 +313,7 @@ export function AuthModal() {
         )}
         <label>
           {t('startRegion')}
-          <input readOnly value={regionForTile(worldTileFromId(region)!, '').name} />
+          <input readOnly value={t(region as TextKey)} />
           <input type="hidden" name="region_id" value={region} />
         </label>
         <label className="checkbox">

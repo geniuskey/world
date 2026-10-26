@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react';
 import { api, ApiFailure, post } from './api';
-import { regionForTile, worldTileFromId } from '../shared/worldGrid';
+import { worldTileName, worldTileFromId } from '../shared/worldGrid';
 import { en, ko, type TextKey } from './i18n';
 import {
   POLL_MS,
@@ -25,10 +25,12 @@ function useWorldState() {
     [revision, setRevision] = useState(0);
   const t = useCallback(
     (key: TextKey, values: Record<string, string | number> = {}) => {
+      const tile = worldTileFromId(key);
       let text: string =
         (locale === 'ko' ? ko : en)[key] ??
+        (tile ? worldTileName(tile, locale) : undefined) ??
         regions.find((r) => r.id === key)?.name ??
-        (worldTileFromId(key) ? regionForTile(worldTileFromId(key)!, '').name : key);
+        key;
       for (const [k, v] of Object.entries(values)) text = text.replaceAll(`{${k}}`, String(v));
       return text;
     },

@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { worldTileFromId, worldTileName } from '../../shared/worldGrid';
 
 const mapFixture = async (route: import('@playwright/test').Route) => {
   if (new URL(route.request().url()).pathname === '/planet')
@@ -276,9 +277,11 @@ test('world tile exploration and first settlement work without preallocated plot
   await page.getByLabel('Latitude', { exact: true }).fill('37.5');
   await page.getByRole('button', { name: 'Explore a world tile', exact: true }).click();
   await expect(page).toHaveURL('/region/earth2:873:725');
-  await expect(page.getByTestId('tile-0-0')).toBeVisible();
+  await expect(page.getByTestId('tile-4-4')).toBeVisible();
   await page.getByRole('button', { name: 'Join the world', exact: true }).click();
-  await expect(page.getByLabel('Starting region')).toHaveValue(/37\.529.*127\.090/);
+  await expect(page.getByLabel('Starting region')).toHaveValue(
+    worldTileName(worldTileFromId('earth2:873:725')!),
+  );
   await page.getByLabel('Settler name').fill(unique());
   await page.getByRole('checkbox').check();
   await page.getByRole('button', { name: 'Enter local playtest' }).click();
@@ -288,6 +291,47 @@ test('world tile exploration and first settlement work without preallocated plot
   expect(state.territory_count).toBe(1);
   expect(errors).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('clicks show unique region names inside and outside the settlement', async ({ page }) => {
+  const id = 'earth2:873:725';
+  const zone = worldTileFromId(id)!;
+  await page.goto(`/region/${id}`);
+  await expect(page.locator('.atlas-label')).toContainText(worldTileName(zone));
+  const tile = page.getByTestId('tile-4-4');
+  await expect(tile).toBeVisible();
+  const canvas = page.locator('.earth-map canvas');
+  const bounds = (await canvas.boundingBox())!;
+  const plot = (await tile.boundingBox())!;
+  await canvas.click({
+    position: { x: plot.x + plot.width / 2 - bounds.x, y: plot.y + plot.height / 2 - bounds.y },
+  });
+  await expect(page.locator('.maplibregl-popup-content')).toContainText(
+    `${worldTileName(zone)} · 5-5`,
+  );
+  await page.getByRole('button', { name: '한국어로 변경' }).click();
+  await expect(page.locator('.atlas-label')).toContainText(worldTileName(zone, 'ko'));
+  await expect(page.locator('.maplibregl-popup-content')).toContainText(worldTileName(zone, 'ko'));
+  await page.getByRole('button', { name: '닫기', exact: true }).click();
+  await canvas.click({ position: { x: bounds.width * 0.9, y: bounds.height * 0.35 } });
+  await expect(page.locator('.maplibregl-popup-content')).toContainText(worldTileName(zone, 'ko'));
+  const closeDetail = page.getByRole('button', { name: '닫기', exact: true });
+  if (await closeDetail.isVisible()) await closeDetail.click();
+  for (let step = 0; step < 6; step++) {
+    const previousZoom = Number(await page.locator('.earth-cells').getAttribute('data-zoom'));
+    await page.getByRole('button', { name: '축소', exact: true }).click();
+    await expect
+      .poll(async () => Number(await page.locator('.earth-cells').getAttribute('data-zoom')))
+      .toBeLessThanOrEqual(previousZoom - 0.99);
+  }
+  await canvas.click({ position: { x: bounds.width * 0.9, y: bounds.height * 0.35 } });
+  await expect(page).not.toHaveURL(`/region/${id}`);
+  const next = worldTileFromId(
+    decodeURIComponent(new URL(page.url()).pathname.slice('/region/'.length)),
+  )!;
+  expect(next).not.toBeNull();
+  expect(worldTileName(next, 'ko')).not.toBe(worldTileName(zone, 'ko'));
+  await expect(page.locator('.atlas-label')).toContainText(worldTileName(next, 'ko'));
 });
 
 test('the local world and grid remain usable when the external basemap fails', async ({ page }) => {
@@ -314,4 +358,125 @@ test('the local world and grid remain usable when the external basemap fails', a
   await canvas.click();
   await expect(page).toHaveURL(/\/region\/earth2:\d+:\d+$/);
   expect(errors).toEqual([]);
+});
+
+test('grid follows the pointer and preserves selected and keyboard-focused plots', async ({
+  page,
+}) => {
+  await page.goto('/region/earth2:873:725');
+  const tile = page.getByTestId('tile-4-4');
+  await expect(tile).toBeVisible();
+  const spotlight = page.locator('.earth-cells mask rect');
+  const gradient = page.locator('.earth-cells radialGradient');
+  await expect(spotlight).toHaveAttribute('opacity', '0');
+  await expect(tile).toHaveAttribute('mask', /url\(#.+-mask\)/);
+  const canvas = page.locator('.earth-map canvas');
+  const bounds = (await canvas.boundingBox())!;
+  await page.mouse.move(bounds.x + 120, bounds.y + 200);
+  await expect(spotlight).toHaveAttribute('opacity', '1');
+  await expect(gradient).toHaveAttribute('cx', '120');
+  await expect(gradient).toHaveAttribute('cy', '200');
+  await page.mouse.move(bounds.x + 240, bounds.y + 250);
+  await expect(gradient).toHaveAttribute('cx', '240');
+  await page.mouse.move(0, 0);
+  await expect(spotlight).toHaveAttribute('opacity', '0');
+  await tile.focus();
+  await expect(tile).toHaveCSS('mask-image', 'none');
+  await page.keyboard.press('Enter');
+  await expect(tile).not.toHaveAttribute('mask', /.+/);
+  await page.goto('/');
+  await expect(page.locator('.world-grid polygon').first()).toBeAttached();
+  await expect(page.locator('.world-grid')).toHaveAttribute('mask', /url\(#.+-mask\)/);
+  await expect(page.locator('.earth-cells mask rect')).toHaveAttribute('opacity', '0');
+});
+
+test('regional grid fills the viewport after moving beyond the settlement', async ({ page }) => {
+  await page.goto('/region/earth2:873:725');
+  await expect(page.getByTestId('tile-4-4')).toBeVisible();
+  const grid = page.locator('.regional-grid');
+  const pattern = page.locator('.earth-cells pattern');
+  const canvas = page.locator('.earth-map canvas');
+  const bounds = (await canvas.boundingBox())!;
+  await expect(grid).toHaveAttribute('width', String(bounds.width));
+  await expect(grid).toHaveAttribute('height', String(bounds.height));
+  await expect(grid).toHaveAttribute('mask', /url\(#.+-mask\)/);
+  const spacing = Number(await pattern.getAttribute('width'));
+  expect(spacing).toBeGreaterThan(12);
+  // The repeated lines align with the actual playable cell boundaries.
+  const tile = (await page.getByTestId('tile-4-4').boundingBox())!;
+  expect(Math.abs(tile.width - spacing)).toBeLessThan(1);
+  const camera = await page.locator('.earth-cells').getAttribute('data-camera');
+  for (let drag = 0; drag < 4; drag++) {
+    await page.mouse.move(bounds.x + bounds.width * 0.2, bounds.y + bounds.height * 0.4);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width * 0.85, bounds.y + bounds.height * 0.4, {
+      steps: 8,
+    });
+    await page.mouse.up();
+  }
+  await expect(page.locator('[data-testid^="tile-"]')).toHaveCount(0);
+  await expect(page.locator('.earth-cells')).not.toHaveAttribute('data-camera', camera!);
+  await expect(grid).toBeVisible();
+  await expect(grid).toHaveAttribute('width', String(bounds.width));
+  await page.mouse.move(bounds.x + bounds.width * 0.6, bounds.y + bounds.height * 0.4);
+  await expect(page.locator('.earth-cells mask rect')).toHaveAttribute('opacity', '1');
+  expect(Number(await pattern.getAttribute('width'))).toBeCloseTo(spacing, 3);
+  await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+  await expect
+    .poll(async () => Number(await pattern.getAttribute('width')))
+    .toBeLessThan(spacing * 0.6);
+});
+
+test('zooming out fills the world grid while the next area response is delayed', async ({
+  page,
+}) => {
+  // Let the initial, small regional bounds replace the startup overview response.
+  const initialArea = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    const bbox = url.searchParams.get('bbox')?.split(',').map(Number);
+    return url.pathname === '/api/world/tiles' && !!bbox && bbox[2] - bbox[0] < 1;
+  });
+  await page.goto('/region/earth2:873:725');
+  await expect(page.getByTestId('tile-4-4')).toBeVisible();
+  await initialArea;
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/world/tiles?*', async (route) => {
+    await pending;
+    await route.continue();
+  });
+  try {
+    const overlay = page.locator('.earth-cells');
+    for (let step = 0; step < 7; step++) {
+      const zoom = Number(await overlay.getAttribute('data-zoom'));
+      await page.getByRole('button', { name: 'Zoom out', exact: true }).click();
+      await expect
+        .poll(async () => Number(await overlay.getAttribute('data-zoom')))
+        .toBeLessThanOrEqual(zoom - 0.99);
+    }
+    const canvas = (await page.locator('.earth-map canvas').boundingBox())!;
+    await page.mouse.move(canvas.x + canvas.width * 0.7, canvas.y + canvas.height * 0.5);
+    await expect(page.locator('.earth-cells mask rect')).toHaveAttribute('opacity', '1');
+    const coverage = await page.locator('.world-grid').evaluate((grid) => {
+      const view = grid.closest('svg')!.viewBox.baseVal;
+      const cells = [...grid.querySelectorAll('polygon')].map((polygon) => polygon.getBBox());
+      return [0.25, 0.5, 0.75].flatMap((x) =>
+        [0.25, 0.5, 0.75].map((y) =>
+          cells.some(
+            (cell) =>
+              cell.x <= view.width * x &&
+              cell.x + cell.width >= view.width * x &&
+              cell.y <= view.height * y &&
+              cell.y + cell.height >= view.height * y,
+          ),
+        ),
+      );
+    });
+    expect(coverage).toEqual(Array(9).fill(true));
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
 });

@@ -1,6 +1,6 @@
 # Map data
 
-The interactive map uses MapLibre GL JS with a custom, minimal vector basemap served by OpenFreeMap using OpenStreetMap data. Users can explore the whole world, recognize coastlines, lakes, major rivers, country boundaries and a sparse set of country/city names, and switch between Mercator (2D map) and globe (3D Earth) projections. Every location uses the same global grid. Selecting a world cell opens a local settlement grid; plots are allocated on first settlement. No city receives a preset pin, starter menu entry or special region configuration.
+The interactive map uses MapLibre GL JS with a custom, muted vector basemap served by OpenFreeMap using OpenStreetMap data. Users can explore the whole world, recognize coastlines, lakes, major rivers, administrative boundaries, highways, railways and place names from countries down to neighbourhoods and villages, and switch between Mercator (2D map) and globe (3D Earth) projections. Every location uses the same global grid. Selecting a world cell opens a local settlement grid; plots are allocated on first settlement. No city receives a preset pin, starter menu entry or special region configuration.
 
 ## Geographic grid v1
 
@@ -8,7 +8,17 @@ Each selected world cell anchors an on-demand 8×8 local settlement grid. Cells 
 
 This is a geographic reference for game territory, not a surveyed or cadastral boundary. Resource terrain (meadow, forest, mountain, water) is the existing deterministic game data; it does not describe real land cover. A game water cell and a real river may differ. Neither the map nor the overlay confers real property rights. Changing geographic grid v1 later requires an explicit version/migration decision so owned territory does not silently move.
 
-The backdrop uses muted land/water colors. Roads, buildings, businesses, transport labels and minor place names are omitted at every zoom level. Country and city labels fade out before territory scale so the game grid remains the focus. `src/mapStyle.ts` defines the local style; 2D/globe switching and geographic territory coordinates are preserved.
+The backdrop uses muted land/water colors, warm highway lines and dashed railways. Province, district and local administrative boundaries and progressively smaller place names appear as users zoom in. Regional views start at zoom 14, where the default tile service supplies Korean district and neighbourhood names. Local names remain visible at territory scale; language-specific names fall back to the original local name. Coverage of Korean 시·도, 구, 동 and villages follows the OpenStreetMap features available in the vector tiles, so missing names or boundaries are not inferred. Buildings and businesses are omitted. The regional reference grid repeats across the entire viewport, aligned with the selected settlement, and follows panning and zooming beyond its 8×8 footprint. These extended lines do not allocate additional territories. At low zoom, grid lines are grouped to stay legible. World and unoccupied settlement grids appear within a softly fading 160 px radius of the pointer and disappear on pointer exit or touch release. Selected and owned settlement plots remain visible, and keyboard focus reveals individual plots. `src/mapStyle.ts` defines the local style; 2D/globe switching and geographic territory coordinates are preserved.
+
+## Exploration tools
+
+The collapsible **Map tools** panel supports region-name/code search, saved places, resource distribution, population heatmaps, ownership boundaries, game landmarks, recent activity and distance measurement. Search runs in a Web Worker across all logical root regions and returns at most 16 matches. Full region names include a stable coordinate code; subdivision codes are checked against the server before navigation. Bookmarks (up to 100) and layer choices persist in this browser, independently of login.
+
+Resource overlays use the actual game terrain and production multiplier; they do not infer physical mineral or forest coverage. Population heatmaps use only imported plot estimates from `/api/map/population`; absent estimates remain unknown, and zero is a known observation. The color scale is relative to the current region. Game landmarks are deterministic points on matching game terrain (peak, lake, grove and ruins); they are fictional and grant no resources or ownership. Selecting one focuses and inspects its plot.
+
+The public `/api/map/activity` endpoint returns at most 30 current-season settlement, claim and construction events, optionally scoped to a region. It exposes display names, event times and plot locations, omitting action payloads and filtering blocked accounts. The panel and markers refresh every 30 seconds while active and visible. Migration `0010_map_activity.sql` adds indexes for this view.
+
+Measurement mode consumes map clicks without selecting plots or navigating. Two points show great-circle distance and initial bearing, with a sampled path that crosses the date line continuously. A third click starts another measurement; Clear resets the points and Escape exits. This is an approximate distance on a spherical Earth, rather than a route along roads.
 
 ## Service and attribution
 

@@ -161,7 +161,7 @@ export function MapPage() {
         </div>
       </section>
       <div className="world-layout">
-        <details className="region-sidebar">
+        <details className="region-sidebar" name="map-panel">
           <summary>
             <Globe2 size={16} />
             {t('regions')}
@@ -223,9 +223,9 @@ export function MapPage() {
           <div className="map-toolbar">
             <div>
               {region ? (
-                <button className="text-link" onClick={() => navigate('/')}>
+                <button className="text-link" aria-label={t('back')} onClick={() => navigate('/')}>
                   <ArrowLeft size={15} />
-                  {t('back')}
+                  <span className="map-back-label">{t('back')}</span>
                 </button>
               ) : (
                 <span>
@@ -261,7 +261,7 @@ export function MapPage() {
               </button>
             </div>
           </div>
-          <details className="coordinate-search">
+          <details className="coordinate-search" name="map-panel">
             <summary>
               <Compass size={15} />
               {t('coordinateSearch')}

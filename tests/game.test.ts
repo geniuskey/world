@@ -792,3 +792,69 @@ describe('bounded million-tile view API', () => {
     expect((await request('/regions/earth2:0:0:0')).status).toBe(404);
   });
 });
+
+describe('public map overlays', () => {
+  it('returns actual regional settlement, claim and construction events without action payloads', async () => {
+    const region = 'earth2:912:612';
+    const explorer = await actor('Map Activity Explorer', region);
+    const home = explorer.state.territories[0];
+    const target = `${home.season_id}:${region}:1:0`;
+    expect((await claim(explorer, target)).status).toBe(200);
+    expect(
+      (
+        await request(
+          '/structures/build',
+          { territory_id: target, idempotency_key: uuid() },
+          explorer.cookie,
+        )
+      ).status,
+    ).toBe(200);
+    const result = await request(`/map/activity?region=${region}`, undefined, '', {
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    expect(result.status).toBe(200);
+    expect(result.body.activities).toHaveLength(3);
+    expect(result.body.activities.map((entry: { type: string }) => entry.type).sort()).toEqual([
+      'build',
+      'claim',
+      'join',
+    ]);
+    for (const entry of result.body.activities) {
+      expect(entry.region_id).toBe(region);
+      expect(entry.actor_name).toBe('Map Activity Explorer');
+      expect(entry).not.toHaveProperty('payload_json');
+      expect(entry).not.toHaveProperty('user_id');
+    }
+    expect((await request('/map/activity?region=earth2:911:612')).body.activities).toEqual([]);
+    expect((await request('/map/activity')).body.activities.length).toBeLessThanOrEqual(30);
+    await db.prepare("UPDATE users SET status='blocked' WHERE id=?").bind(explorer.id).run();
+    expect(
+      (
+        await request(`/map/activity?region=${region}`, undefined, '', {
+          headers: { 'Cache-Control': 'no-cache' },
+        })
+      ).body.activities,
+    ).toEqual([]);
+  });
+  it('returns imported population for virtual plots and leaves unknown plots absent', async () => {
+    const region = 'earth2:913:613';
+    const territory = `s1:${region}:2:3`;
+    await db
+      .prepare('INSERT INTO territory_population VALUES(?,?,?,?,?,?)')
+      .bind(territory, 1234, 2025, 'https://example.com/population', '[]', 1)
+      .run();
+    const result = await request(`/map/population?region=${region}`);
+    expect(result.status).toBe(200);
+    expect(result.body.samples).toEqual([
+      {
+        territory_id: territory,
+        population: 1234,
+        year: 2025,
+        source: 'https://example.com/population',
+      },
+    ]);
+    expect((await request('/map/population?region=earth2:914:613')).body.samples).toEqual([]);
+    expect((await request('/map/population?region=earth2:1024:0')).status).toBe(404);
+    expect((await request('/map/population')).status).toBe(400);
+  });
+});
