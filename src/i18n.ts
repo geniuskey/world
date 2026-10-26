@@ -88,6 +88,7 @@ export const en = {
   season: 'Season',
   seasonName: 'The first footprints',
   daysLeft: '{days} days remaining',
+  permanentWorld: 'Permanent world',
   seasonEnded: 'This season has ended. Your history is preserved.',
   live: 'OPEN WORLD',
   free: 'Free to explore. Free to belong.',
@@ -171,7 +172,8 @@ export const en = {
   displayName: 'Settler name',
   namePlaceholder: 'How will the world know you?',
   startRegion: 'Starting region',
-  acceptRules: 'I understand territory lasts for this season and has no real-world property value.',
+  acceptRules:
+    'I understand territory is a permanent in-game record with no real-world property value.',
   google: 'Continue with Google',
   devLogin: 'Enter local playtest',
   devNote:
@@ -266,9 +268,9 @@ export const en = {
   ruleTrade: '04 — Share what you grow',
   ruleTradeBody:
     'List a whole resource lot at a price you choose. Resources are held in escrow. A sale burns 3% of its Gold value, rounded up. Withdraw an open offer to recover the resources. Trades have a two-second cooldown.',
-  ruleSeason: '05 — A new chapter every season',
+  ruleSeason: '05 — Yours to keep',
   ruleSeasonBody:
-    'Seasons last 30 days (pilots may last 7). Territory is a temporary game permission and may reset next season. Account history remains. Score is 10 per territory plus resources produced.',
+    'Territory is permanent and is not reset. It is an in-game record, not real property. Score is 10 per territory plus resources produced.',
   ruleFair: '06 — Keep it a shared world',
   ruleFairBody:
     'No real property rights, investment value, cash redemption, paid power, or real location tracking. Combat, land trading, and payments are currently unavailable. Report abuse using a territory’s report button.',
@@ -428,6 +430,7 @@ export const ko: Record<TextKey, string> = {
   season: '시즌',
   seasonName: '첫 번째 발자국',
   daysLeft: '종료까지 {days}일',
+  permanentWorld: '영구 월드',
   seasonEnded: '시즌이 종료되었습니다. 기록은 보존됩니다.',
   live: '열린 세계',
   free: '탐험도, 정착도 무료입니다.',
@@ -513,7 +516,7 @@ export const ko: Record<TextKey, string> = {
   displayName: '정착자 이름',
   namePlaceholder: '어떤 이름으로 기억될까요?',
   startRegion: '시작 지역',
-  acceptRules: '영토는 시즌 동안의 게임상 사용권이며 실제 부동산 가치와 무관함을 이해합니다.',
+  acceptRules: '영토는 영구적인 게임 내 기록이며 실제 부동산 가치와 무관함을 이해합니다.',
   google: 'Google로 계속',
   devLogin: '로컬 플레이테스트 시작',
   devNote:
@@ -606,9 +609,9 @@ export const ko: Record<TextKey, string> = {
   ruleTrade: '04 — 자원 나누기',
   ruleTradeBody:
     '자원을 묶음으로 예치하고 판매 가격을 정합니다. 판매 시 Gold 금액의 3%를 올림하여 소각합니다. 열린 주문을 취소하면 자원이 돌아옵니다. 거래 간격은 최소 2초입니다.',
-  ruleSeason: '05 — 시즌마다 새로운 장',
+  ruleSeason: '05 — 영원히 내 땅',
   ruleSeasonBody:
-    '기본 시즌은 30일, 시범 시즌은 7일입니다. 영토는 게임 안의 일시적 사용권이며 다음 시즌에 초기화될 수 있습니다. 계정 기록은 유지됩니다. 점수는 영토당 10점과 누적 자원 생산량의 합입니다.',
+    '영토는 영구적이며 초기화되지 않습니다. 실제 부동산이 아닌 게임 내 기록입니다. 점수는 영토당 10점과 누적 자원 생산량의 합입니다.',
   ruleFair: '06 — 모두의 세계 지키기',
   ruleFairBody:
     '실제 토지 권리, 투자 가치, 현금 환전, 유료 능력, 실제 위치 추적은 없습니다. 전투·토지 거래·결제는 현재 비활성입니다. 영토의 신고 버튼으로 문제를 알려주세요.',

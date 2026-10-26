@@ -2,6 +2,8 @@ export const TURN_SECONDS = 21_600;
 export const MAX_ENERGY = 4;
 export const CHUNK_SIZE = 8;
 export const POLL_MS = 120_000;
+// 9999-12-31T23:59:59Z: a season ending at or after this never resets territory.
+export const PERMANENT_ENDS_AT = 253_402_300_799;
 export const RESOURCE_KINDS = ['food', 'wood', 'iron'] as const;
 export type ResourceKind = (typeof RESOURCE_KINDS)[number];
 export type Terrain = 'meadow' | 'forest' | 'mountain' | 'water';
@@ -123,4 +125,5 @@ export function recoverEnergy(value: number, updatedAt: number, now: number) {
     updatedAt: energy === MAX_ENERGY ? now : updatedAt + turns * TURN_SECONDS,
   };
 }
+export const isPermanent = (season: Pick<Season, 'ends_at'>) => season.ends_at >= PERMANENT_ENDS_AT;
 export const tradeTax = (total: number) => Math.ceil((total * 3) / 100);

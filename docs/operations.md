@@ -28,13 +28,13 @@ Counters include Worker API requests. D1 row counters measure game/auth queries;
 
 An expired active season rejects new game commands while its records remain readable. Starting the next season is an operator operation after backup and validation, not a destructive scheduled reset.
 
-Generate a new season using a new identifier and an explicit output path:
+Territory is permanent (see [land ownership v2](land-ownership.md)): do not rotate the production season. Migration 0011 makes the active season permanent. A fresh database or an isolated pilot can generate a season with a new identifier and an explicit output path:
 
 ```sh
-node scripts/world.mjs s2 30 .wrangler/season-s2.sql
+node scripts/world.mjs s2 permanent .wrangler/season-s2.sql
 ```
 
-Use `7` for a pilot. The default output is `.wrangler/season-<id>.sql`; never overwrite an applied migration to reset production. The file inserts only the season. Global regions and plots are created on demand, with no preset cities. End the preceding season only after its `ends_at` has passed, then apply the reviewed new-season file to the intended database. Do not reuse a season ID. The unique active-season constraint blocks accidental overlap.
+Use `7` or `30` instead of `permanent` for a time-limited pilot. The default output is `.wrangler/season-<id>.sql`; never overwrite an applied migration to reset production. The file inserts only the season. Global regions and plots are created on demand, with no preset cities. End the preceding season only after its `ends_at` has passed, then apply the reviewed new-season file to the intended database. Do not reuse a season ID. The unique active-season constraint blocks accidental overlap.
 
 Existing users choose a new starting region and receive a fresh seasonal grant. Old territory, ledgers, trades and account achievements remain. Expired offers remain frozen in the historical season's escrow and cannot transfer assets into a new season. The integration suite simulates this transition and checks preserved history and achievements.
 

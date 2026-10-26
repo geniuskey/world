@@ -19,7 +19,7 @@ import { useWorld } from './state';
 import { api, post } from './api';
 import type { TextKey } from './i18n';
 import { worldTileFromId } from '../shared/worldGrid';
-import type { ResourceKind } from '../shared/game';
+import { isPermanent, type ResourceKind } from '../shared/game';
 
 export const resourceIcon = { food: Wheat, wood: TreePine, iron: Mountain };
 export function Resource({
@@ -149,9 +149,14 @@ export function Header() {
         ) : (
           <span className="season-days">
             {config &&
-              t('daysLeft', {
-                days: Math.max(0, Math.ceil((config.season.ends_at - Date.now() / 1000) / 86400)),
-              })}
+              (isPermanent(config.season)
+                ? t('permanentWorld')
+                : t('daysLeft', {
+                    days: Math.max(
+                      0,
+                      Math.ceil((config.season.ends_at - Date.now() / 1000) / 86400),
+                    ),
+                  }))}
           </span>
         )}
       </div>

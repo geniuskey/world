@@ -1,6 +1,6 @@
-# Land ownership v2 (proposed)
+# Land ownership v2
 
-Status: design accepted 2026-10-26, not implemented. Rules v1 ([game-rules.md](game-rules.md), [economy.md](economy.md)) remain in force until migration.
+Status: design accepted 2026-10-26. Permanent ownership is implemented (migration 0011): the active season never ends and is no longer rotated, so every `season_id` key and ledger trigger stays unchanged. Pricing, sales and buyouts are not implemented yet; the rest of rules v1 ([game-rules.md](game-rules.md), [economy.md](economy.md)) remains in force.
 
 ## Goal
 
@@ -30,13 +30,13 @@ The buyout price is a hard ceiling: nobody pays more than they could force. An o
 
 ## Transactions
 
-| Action | Rule |
-|---|---|
-| First claim | Pay the market price; first come, first served; one free starter plot |
-| Listing | Owner asks any price at or below the buyout price; escrowed like resource orders |
+| Action        | Rule                                                                                                      |
+| ------------- | --------------------------------------------------------------------------------------------------------- |
+| First claim   | Pay the market price; first come, first served; one free starter plot                                     |
+| Listing       | Owner asks any price at or below the buyout price; escrowed like resource orders                          |
 | Forced buyout | Pay the buyout price; the owner receives it plus facility build cost, minus transfer tax, and is notified |
-| Protection | No forced buyout within 7 days of any acquisition |
-| Cooldown | The same buyer cannot force-buy from the same owner again for 7 days |
+| Protection    | No forced buyout within 7 days of any acquisition                                                         |
+| Cooldown      | The same buyer cannot force-buy from the same owner again for 7 days                                      |
 
 Former and first owners stay in a permanent public history ("first settler of …"). Losing a plot keeps the record and pays the premium, but grants no economic protection.
 

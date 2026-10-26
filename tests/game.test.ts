@@ -4,6 +4,8 @@ import { build } from 'esbuild';
 import { Miniflare, Log, LogLevel, convertV4MiniflareOptions } from 'miniflare';
 import { readFile, readdir } from 'node:fs/promises';
 import {
+  isPermanent,
+  PERMANENT_ENDS_AT,
   recoverEnergy,
   tradeTax,
   TURN_SECONDS,
@@ -646,6 +648,14 @@ describe('operations and season boundaries', () => {
     const b = await actor();
     await db.prepare('UPDATE sessions SET expires_at=0 WHERE user_id=?').bind(b.id).run();
     expect((await request('/me', undefined, b.cookie)).status).toBe(401);
+  });
+  it('keeps territory in a permanent world that never expires', async () => {
+    const season = await db
+      .prepare("SELECT ends_at,rules_version FROM seasons WHERE status='active'")
+      .first<{ ends_at: number; rules_version: string }>();
+    expect(isPermanent(season!)).toBe(true);
+    expect(season!.rules_version).toBe('land-v2');
+    expect((await request('/world/config')).body.season.ends_at).toBe(PERMANENT_ENDS_AT);
   });
   it('stops seasonal commands without destroying balances or historical records', async () => {
     const a = await actor();
