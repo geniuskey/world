@@ -18,7 +18,9 @@ import {
 } from '../shared/worldGrid';
 import { coordinates, gridCell, gridPoint } from '../shared/geography';
 import type { TextKey } from './i18n';
-import { gameMapStyle, placeName, placeLabelLayers } from './mapStyle';
+import { gameMapStyle, placeName as placeLabel, placeLabelLayers } from './mapStyle';
+import { placeAt } from './places';
+import { placeName } from '../shared/places';
 import { MapTools, useMapActivity } from './MapTools';
 import { MapOverlays } from './MapOverlays';
 import {
@@ -307,11 +309,21 @@ export function Atlas({
     content.setAttribute('role', 'status');
     content.appendChild(title);
     content.appendChild(point);
+    let current = true;
+    void placeAt(location.point[0], location.point[1])
+      .then((lookup) => {
+        if (!current || !lookup) return;
+        const name = document.createElement('div');
+        name.textContent = placeName(lookup.place, locale);
+        content.insertBefore(name, point);
+      })
+      .catch(() => {});
     const popup = new maplibregl.Popup({ closeButton: false, maxWidth: '280px' })
       .setLngLat(location.point)
       .setDOMContent(content)
       .addTo(map);
     return () => {
+      current = false;
       popup.remove();
     };
   }, [ready, location, locale]);
@@ -343,7 +355,7 @@ export function Atlas({
   useEffect(() => {
     if (!ready) return;
     for (const { id } of placeLabelLayers)
-      mapRef.current?.setLayoutProperty(id, 'text-field', placeName(locale));
+      mapRef.current?.setLayoutProperty(id, 'text-field', placeLabel(locale));
   }, [ready, locale]);
   useEffect(() => {
     if (ready) mapRef.current?.setProjection({ type: globe ? 'globe' : 'mercator' });

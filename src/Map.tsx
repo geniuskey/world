@@ -20,6 +20,8 @@ import {
   X,
 } from 'lucide-react';
 import { useWorld } from './state';
+import { usePlace } from './places';
+import { placeName } from '../shared/places';
 import { api, mutate, post } from './api';
 import { Empty, Modal, Resource } from './components';
 import {
@@ -126,6 +128,8 @@ export function MapPage() {
   };
   const terrain = tile?.terrain_type,
     resource = terrain && terrain !== 'water' ? terrainResource[terrain] : null;
+  const point = region && tile ? gridPoint(region, tile.x + 0.5, tile.y + 0.5) : null;
+  const place = usePlace(point);
   const stats = useMemo(
     () =>
       regions.reduce((a, r) => ({ owned: a.owned + r.owned, open: a.open + r.available }), {
@@ -356,14 +360,29 @@ export function MapPage() {
               </div>
               <div className="detail-content">
                 <span className="eyebrow">
-                  {t('tile')} · {region && t(region.id as TextKey)}
+                  {t('tile')} · {place ? t(terrain!) : region && t(region.id as TextKey)}
                 </span>
-                <h2>{t(terrain!)}</h2>
+                <h2>{place ? placeName(place.place, locale, true) : t(terrain!)}</h2>
                 {region && (
                   <div className="territory-location">
-                    <strong>{regionPlace(region.id, locale)}</strong>
+                    <strong>
+                      {place ? placeName(place.place, locale) : regionPlace(region.id, locale)}
+                    </strong>
                     <span>{coordinates(gridPoint(region, tile.x + 0.5, tile.y + 0.5))}</span>
                     <small>{t('geographicCell')}</small>
+                    {place && (
+                      <small>
+                        {t('placeSource', { year: place.index.year })} ·{' '}
+                        <a
+                          className="text-link"
+                          href={place.index.source_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {t('placeLicense')} ↗
+                        </a>
+                      </small>
+                    )}
                     <a
                       className="text-link"
                       target="_blank"

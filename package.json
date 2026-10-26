@@ -20,7 +20,8 @@
     "season:generate": "node scripts/world.mjs",
     "deploy": "npm run build && wrangler deploy --env=\"\"",
     "format": "prettier --write src worker shared tests scripts *.ts *.json *.jsonc docs README.md .github",
-    "population:import": "node scripts/population.mjs"
+    "population:import": "node scripts/population.mjs",
+    "places:build": "node scripts/places.mjs --country KOR"
   },
   "dependencies": {
     "hono": "^4.10.0",

@@ -1,5 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { worldTileFromId, worldTileName } from '../../shared/worldGrid';
+import { readFileSync } from 'node:fs';
+import { regionForTile, worldTileFromId, worldTileName } from '../../shared/worldGrid';
+import { gridPoint } from '../../shared/geography';
+import { chunkValue, placeCell, placeFromIndex, placeName } from '../../shared/places';
 
 const region = 'earth2:873:725';
 const name = worldTileName(worldTileFromId(region)!);
@@ -145,4 +148,19 @@ test('recent real settlement events appear in the feed and on the map', async ({
   await page.locator('.map-activity-list').getByRole('link').filter({ hasText: explorer }).click();
   await expect(page).toHaveURL(/\/territory\/s1:earth2:873:725:/);
   await expect(page.locator('.detail-sidebar.has-selection')).toBeVisible();
+});
+
+test('plots in Korea show their real administrative area and source', async ({ page }) => {
+  const index = JSON.parse(readFileSync('public/places/kor/index.json', 'utf8'));
+  const point = gridPoint(regionForTile(worldTileFromId(region)!, 's1'), 3.5, 3.5);
+  const { root, row, column } = placeCell(point[0], point[1], index.cells);
+  const chunk = JSON.parse(
+    readFileSync(`public/places/kor/${root.replace(':', '-')}.json`, 'utf8'),
+  );
+  const place = placeFromIndex(index, chunkValue(chunk, row, column))!;
+  await page.goto(`/territory/s1:${region}:3:3`);
+  const sidebar = page.locator('.detail-sidebar.has-selection');
+  await expect(sidebar.getByRole('heading', { level: 2 })).toHaveText(placeName(place, 'en', true));
+  await expect(sidebar.locator('.territory-location strong')).toHaveText(placeName(place, 'en'));
+  await expect(sidebar.getByRole('link', { name: /KOGL Type 1/ })).toBeVisible();
 });
