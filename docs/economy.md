@@ -4,7 +4,7 @@ All quantities are integers. Starter grant: 100 Gold, 12 food, 12 wood, 12 iron 
 
 ## Land price
 
-A claim costs one energy plus the plot's market price in Gold: ten turns of the plot's own Gold income, `10 × (1 + floor(population / 100))` (`shared/game.ts` `plotPrice`, migration 0013). An unpopulated or unimported plot costs 10 Gold; a plot with 950 imported residents costs 100. The Gold is burned, so claims are a sink alongside facilities and tax. The starter plot from joining stays free. The claim result and the territory detail report `price_gold`; a short balance fails with `INSUFFICIENT_FUNDS` and changes nothing. Every plot pays back its price in 2.5 days of its own income, so dense plots cost more without earning faster relative to their price. Demand from land trades (see [land ownership v2](land-ownership.md)) is not applied yet.
+A claim costs one energy plus the plot's market price in Gold: ten turns of the plot's own Gold income, `10 × (1 + floor(population / 100))` (`shared/game.ts` `plotPrice`, migration 0013). An unpopulated or unimported plot costs 10 Gold; a plot with 950 imported residents costs 100. The Gold is burned, so claims are a sink alongside facilities and tax. The starter plot from joining stays free. The claim result and the territory detail report `price_gold`; a short balance fails with `INSUFFICIENT_FUNDS` and changes nothing. Every plot pays back its price in 2.5 days of its own income, so dense plots cost more without earning faster relative to their price. Market price includes the region's demand index from recent land trades (see [land ownership v2](land-ownership.md#price)).
 
 ## Land trading
 

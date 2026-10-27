@@ -175,8 +175,9 @@ export function recoverEnergy(value: number, updatedAt: number, now: number) {
   };
 }
 export const isPermanent = (season: Pick<Season, 'ends_at'>) => season.ends_at >= PERMANENT_ENDS_AT;
-// Land ownership v2 market price: ten turns of the plot's own Gold income (1 base plus
-// 1 per 100 imported residents). Mirrored by the claim trigger in migration 0013.
+// Land ownership v2 base value: ten turns of the plot's own Gold income (1 base plus
+// 1 per 100 imported residents). Mirrored by land_base in migration 0017; the market price is
+// this times the region's demand index (land_market).
 export const PRICE_TURNS = 10;
 export const plotIncome = (population?: number | null) => 1 + Math.floor((population ?? 0) / 100);
 export const plotPrice = (population?: number | null) => PRICE_TURNS * plotIncome(population);

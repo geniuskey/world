@@ -23,7 +23,6 @@ Priority: a playable free MVP plus resource trading. External launch requirement
 - [x] Concurrency, retries and conservation tests
 - [x] Season transition simulation and historical records
 - [x] Reports and operator review
-- [ ] Combat/protection/cooldowns (deferred; disabled)
 - [ ] Automated fraud heuristics (deferred)
 
 ## Phase 3
@@ -56,4 +55,4 @@ Validated locally on 2026-10-25:
 - `npm audit`: zero known vulnerabilities in the installed dependency tree.
 - Local D1 migrations and repeatable demo initialization execute successfully. A public chunk returns an ETag and a cache-hit response; conditional requests return 304.
 
-Production OAuth/DNS/Cloudflare deployment and real-device/network measurements remain external launch checks. Combat, automated fraud scoring, real payments and Phase 4 features remain deferred as specified above.
+Production OAuth/DNS/Cloudflare deployment and real-device/network measurements remain external launch checks. Automated fraud scoring, real payments and Phase 4 features remain deferred as specified above. Combat is dropped: land trading handles contested plots through bounded buyouts, protection and cooldowns.

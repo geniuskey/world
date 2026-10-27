@@ -637,15 +637,15 @@ describe('land trading', () => {
   const lakes = 'earth2:300:700:0:0:0:0:0:0';
   // Joins elsewhere so these extra accounts leave the default fixture's starter plots free.
   const settler = () => actor(undefined, 'earth2:700:500:0:0:0:0:0:0');
-  const plot = (x: number, y: number) => `s1:${lakes}:${x}:${y}`;
+  const plot = (x: number, y: number, region = lakes) => `s1:${region}:${x}:${y}`;
   // Places the actor on the first free run of `n` adjacent land plots; returns their IDs.
-  async function homestead(a: Actor, n = 2) {
+  async function homestead(a: Actor, n = 2, region = lakes) {
     const rows = (
       await db
         .prepare(
           "SELECT x,y FROM territories WHERE region_id=? AND owner_user_id IS NULL AND terrain_type<>'water' AND y<16 ORDER BY y,x",
         )
-        .bind(lakes)
+        .bind(region)
         .all<{ x: number; y: number }>()
     ).results;
     const start = rows.findIndex((r, i) =>
@@ -653,8 +653,8 @@ describe('land trading', () => {
     );
     expect(start).toBeGreaterThanOrEqual(0);
     const { x, y } = rows[start];
-    await place(a, x, y);
-    return Array.from({ length: n }, (_, j) => plot(x + j, y));
+    await place(a, x, y, region);
+    return Array.from({ length: n }, (_, j) => plot(x + j, y, region));
   }
   const land = (
     a: Actor,
@@ -842,6 +842,37 @@ describe('land trading', () => {
     );
     await db.prepare("UPDATE users SET status='blocked' WHERE id=?").bind(c.id).run();
     expect((await request(`/players/${c.id}`)).status).toBe(404);
+  });
+
+  // Uses its own region (han) so trades in the lakes tests above do not count toward its demand.
+  it('raises the region demand index from recent trades, at most 5% per day', async () => {
+    const han = 'earth2:800:600:0:0:0:0:0:0';
+    const sellers = [await settler(), await settler(), await settler()];
+    const tiles: string[] = [];
+    for (const s of sellers) tiles.push((await homestead(s, 1, han))[0]);
+    const buyers = [await settler(), await settler(), await settler()];
+    const index = async () =>
+      (
+        await db
+          .prepare('SELECT index_bp FROM land_demand WHERE region_id=?')
+          .bind(han)
+          .first<{ index_bp: number }>()
+      )?.index_bp;
+    // Each trade is at 12 Gold, which is a fixed multiple of the base value (ratio 1.2). Two trades
+    // are too few to move demand; the third sets the target to 12000 basis points, but the day's cap
+    // allows only 10500.
+    for (const [i, tile] of tiles.entries()) {
+      expect((await land(sellers[i], tile, 'list', 12)).status).toBe(200);
+      expect((await land(buyers[i], tile, 'buy', 12)).status).toBe(200);
+      expect(await index()).toBe(i < 2 ? 10000 : 10500);
+    }
+    const base = (await db
+      .prepare('SELECT base_price FROM land_base WHERE territory_id=?')
+      .bind(tiles[0])
+      .first<{ base_price: number }>())!.base_price;
+    const traded = (await request(`/territories/${tiles[0]}`)).body.territory;
+    expect(traded.market_price_gold).toBe(Math.ceil((base * 10500) / 10000));
+    expect(traded.buyout_price_gold).toBe(Math.ceil((traded.market_price_gold * 120) / 100));
   });
 });
 
